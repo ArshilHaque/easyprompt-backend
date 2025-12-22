@@ -19,7 +19,6 @@
             flex-direction: column;
         }
 
-        /* Header */
         .header {
             background: white;
             border-bottom: 1px solid #e0e0e0;
@@ -55,7 +54,6 @@
             background: #f9f9f9;
         }
 
-        /* Main Content */
         .main-content {
             flex: 1;
             display: flex;
@@ -73,46 +71,16 @@
             width: 100%;
         }
 
-        /* Main Message Section */
-        .main-message {
-            text-align: center;
-            margin-bottom: 32px;
-        }
-
-        .main-message p {
-            font-size: 16px;
-            color: #4b5563;
-            line-height: 1.6;
-            margin-bottom: 24px;
-        }
-
-        .cta-button {
-            width: 100%;
-            padding: 16px;
-            font-size: 16px;
-            font-weight: 600;
-            color: white;
-            background: #6366f1;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            text-decoration: none;
-            display: block;
-            text-align: center;
-        }
-
-        .cta-button:hover {
-            background: #4f46e5;
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
-        }
-
-        /* Sections */
         .section {
             margin-top: 32px;
             padding-top: 32px;
             border-top: 1px solid #e5e7eb;
+        }
+
+        .section:first-child {
+            margin-top: 0;
+            padding-top: 0;
+            border-top: none;
         }
 
         .section-title {
@@ -163,39 +131,8 @@
             color: #4b5563;
         }
 
-        .credits-explanation {
-            font-size: 12px;
+        .loading {
             color: #6b7280;
-            margin-top: 8px;
-        }
-
-        .billing-button {
-            width: 100%;
-            padding: 12px;
-            font-size: 14px;
-            font-weight: 600;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        .billing-button.primary {
-            background: #6366f1;
-            color: white;
-        }
-
-        .billing-button.primary:hover {
-            background: #4f46e5;
-        }
-
-        .billing-button.secondary {
-            background: #f3f4f6;
-            color: #1a1a1a;
-        }
-
-        .billing-button.secondary:hover {
-            background: #e5e7eb;
         }
     </style>
 </head>
@@ -207,42 +144,23 @@
 
     <div class="main-content">
         <div class="account-card">
-            <!-- Main Message Section -->
-            <div class="main-message">
-                <p>EasyPrompt works directly inside ChatGPT via the Chrome extension.</p>
-                <a href="https://chrome.google.com/webstore" target="_blank" class="cta-button">Download Chrome Extension</a>
-            </div>
-
-            <!-- Account Section -->
             <div class="section">
                 <h2 class="section-title">Account</h2>
                 <div class="info-row">
                     <span class="info-label">Email</span>
-                    <span class="info-value" id="userEmail">Loading...</span>
+                    <span class="info-value loading" id="userEmail">Loading...</span>
                 </div>
                 <div class="info-row">
                     <span class="info-label">Plan</span>
-                    <span class="info-value" id="userPlan">Loading...</span>
+                    <span class="info-value loading" id="userPlan">Loading...</span>
                 </div>
             </div>
 
-            <!-- Credits Section -->
             <div class="section">
                 <h2 class="section-title">Credits</h2>
                 <div class="info-row">
                     <span class="info-label">Remaining</span>
-                    <span class="info-value" id="creditsNumber">Loading...</span>
-                </div>
-                <div class="credits-explanation">
-                    Credits are used when improving or refining prompts inside the extension.
-                </div>
-            </div>
-
-            <!-- Billing Section -->
-            <div class="section">
-                <h2 class="section-title">Billing</h2>
-                <div id="billingButtons">
-                    <!-- Buttons will be inserted here based on plan -->
+                    <span class="info-value loading" id="creditsNumber">Loading...</span>
                 </div>
             </div>
         </div>
@@ -250,190 +168,23 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
     <script>
-        console.log('=== APP.HTML PAGE LOAD ===');
-        console.log('Timestamp:', new Date().toISOString());
-        console.log('Window location:', window.location.href);
-        console.log('Document ready state:', document.readyState);
-
         // Supabase configuration
         const SUPABASE_URL = 'https://crqaugwmmoafvbjhrrsw.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNycWF1Z3dtbW9hZnZiamhycnN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyOTYwNjQsImV4cCI6MjA4MTg3MjA2NH0.-drXBQ22Nyhwh5Qs1LNaplHlztSPXDe0XtEEutv-rlE';
+        const API_BASE_URL = window.location.origin;
         
-        // Backend API URL
-        const API_BASE_URL = 'http://localhost:3000';
-        
-        console.log('=== INITIALIZING SUPABASE CLIENT ===');
-        console.log('Supabase URL:', SUPABASE_URL);
-        console.log('Anon key present:', !!SUPABASE_ANON_KEY);
-        console.log('Supabase library loaded:', typeof supabase !== 'undefined');
-        console.log('API Base URL:', API_BASE_URL);
-        
-        // Initialize Supabase client ONCE with session persistence
-        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-            auth: {
-                persistSession: true,
-                autoRefreshToken: true,
-                detectSessionInUrl: false
-            }
-        });
-        
-        console.log('=== SUPABASE CLIENT CREATED ===');
-        console.log('Client object:', supabaseClient);
-        console.log('Client auth:', supabaseClient.auth);
+        // Initialize Supabase client
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        // Force logout function
-        function forceLogout() {
-            console.log('=== FORCE LOGOUT CALLED ===');
-            console.log('Clearing localStorage token');
+        // Redirect to auth if token invalid
+        function redirectToAuth() {
             localStorage.removeItem('supabase_token');
-            console.log('Redirecting to auth.html');
             window.location.href = 'auth.html';
         }
 
-        // Check authentication on page load
-        async function checkAuthentication() {
-            console.log('=== CHECKING AUTHENTICATION ===');
-            console.log('Timestamp:', new Date().toISOString());
-            
+        // Load user account info from backend
+        async function loadAccountInfo(accessToken) {
             try {
-                // Check localStorage first
-                console.log('=== CHECKING LOCALSTORAGE ===');
-                const storedToken = localStorage.getItem('supabase_token');
-                console.log('Stored token exists:', !!storedToken);
-                console.log('Stored token length:', storedToken ? storedToken.length : 0);
-                console.log('Stored token (first 20 chars):', storedToken ? storedToken.substring(0, 20) + '...' : 'N/A');
-                
-                if (!storedToken) {
-                    console.error('=== NO TOKEN IN LOCALSTORAGE ===');
-                    console.error('Redirecting to login');
-                    forceLogout();
-                    return;
-                }
-
-                console.log('=== RESTORING SESSION FROM TOKEN ===');
-                console.log('Attempting setSession with stored token');
-                
-                // Try to set session using stored token
-                const { data: sessionData, error: sessionError } = await supabaseClient.auth.setSession({
-                    access_token: storedToken,
-                    refresh_token: ''
-                });
-
-                console.log('=== setSession RESULT ===');
-                console.log('Session data:', sessionData);
-                console.log('Session error:', sessionError);
-                console.log('Has session:', !!(sessionData && sessionData.session));
-                console.log('Has error:', !!sessionError);
-
-                let session = null;
-
-                if (sessionError || !sessionData || !sessionData.session) {
-                    console.log('=== setSession FAILED, TRYING getUser ===');
-                    console.log('Session error object:', sessionError);
-                    console.log('Session error message:', sessionError ? sessionError.message : 'N/A');
-                    
-                    // If setSession fails, validate token with getUser
-                    console.log('Calling getUser with stored token');
-                    const { data: { user }, error: userError } = await supabaseClient.auth.getUser(storedToken);
-                    
-                    console.log('=== getUser RESULT ===');
-                    console.log('User data:', user);
-                    console.log('User error:', userError);
-                    console.log('Has user:', !!user);
-                    console.log('Has error:', !!userError);
-                    
-                    if (userError || !user) {
-                        console.error('=== TOKEN VALIDATION FAILED ===');
-                        console.error('User error object:', userError);
-                        console.error('User error message:', userError ? userError.message : 'N/A');
-                        console.error('Full user error:', JSON.stringify(userError, Object.getOwnPropertyNames(userError || {}), 2));
-                        localStorage.removeItem('supabase_token');
-                        forceLogout();
-                        return;
-                    }
-                    
-                    // Token is valid, create session object manually
-                    console.log('=== CREATING SESSION MANUALLY ===');
-                    session = {
-                        access_token: storedToken,
-                        refresh_token: '',
-                        user: user
-                    };
-                    console.log('Manual session created:', session);
-                    console.log('Session access token:', session.access_token);
-                    console.log('Session user:', session.user);
-                } else {
-                    session = sessionData.session;
-                    console.log('=== SESSION RESTORED SUCCESSFULLY ===');
-                    console.log('Session object:', session);
-                    console.log('Session access token:', session.access_token);
-                    console.log('Session user:', session.user);
-                }
-
-                // Verify we have a valid session with access_token
-                console.log('=== VERIFYING SESSION ===');
-                console.log('Session exists:', !!session);
-                console.log('Session access_token exists:', !!(session && session.access_token));
-                console.log('Session access_token length:', session && session.access_token ? session.access_token.length : 0);
-                
-                if (!session || !session.access_token) {
-                    console.error('=== INVALID SESSION ===');
-                    console.error('Session:', session);
-                    console.error('Access token:', session ? session.access_token : 'N/A');
-                    localStorage.removeItem('supabase_token');
-                    forceLogout();
-                    return;
-                }
-                
-                console.log('=== AUTHENTICATION SUCCESSFUL ===');
-                console.log('Session is valid');
-                console.log('Access token:', session.access_token);
-                console.log('User ID:', session.user ? session.user.id : 'N/A');
-                console.log('User email:', session.user ? session.user.email : 'N/A');
-                
-                // Session is valid, allow page to render
-                document.body.classList.remove('auth-checking');
-                console.log('Page body class updated');
-                
-                // Load user account info using session.access_token
-                console.log('=== LOADING ACCOUNT INFO ===');
-                await loadAccountInfo(session);
-            } catch (error) {
-                console.error('=== AUTHENTICATION CHECK FAILED ===');
-                console.error('Error object:', error);
-                console.error('Error message:', error.message);
-                console.error('Error name:', error.name);
-                console.error('Error stack:', error.stack);
-                console.error('Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
-                localStorage.removeItem('supabase_token');
-                forceLogout();
-            }
-        }
-
-        // Load account information
-        async function loadAccountInfo(session) {
-            console.log('=== LOAD ACCOUNT INFO CALLED ===');
-            console.log('Session object:', session);
-            
-            // Extract access token from session
-            if (!session || !session.access_token) {
-                console.error('=== NO ACCESS TOKEN IN SESSION ===');
-                console.error('Session:', session);
-                forceLogout();
-                return;
-            }
-
-            const accessToken = session.access_token;
-            console.log('=== EXTRACTED ACCESS TOKEN ===');
-            console.log('Access token length:', accessToken.length);
-            console.log('Access token (first 20 chars):', accessToken.substring(0, 20) + '...');
-
-            try {
-                console.log('=== CALLING /api/me ===');
-                console.log('API URL:', `${API_BASE_URL}/api/me`);
-                console.log('Authorization header:', `Bearer ${accessToken.substring(0, 20)}...`);
-                
-                // Call GET /api/me with Authorization header
                 const response = await fetch(`${API_BASE_URL}/api/me`, {
                     method: 'GET',
                     headers: {
@@ -442,127 +193,84 @@
                     }
                 });
 
-                console.log('=== /api/me RESPONSE RECEIVED ===');
-                console.log('Response status:', response.status);
-                console.log('Response status text:', response.statusText);
-                console.log('Response ok:', response.ok);
-                console.log('Response headers:', Object.fromEntries(response.headers.entries()));
-
-                // If /api/me fails for any reason, force logout
                 if (!response.ok) {
-                    console.error('=== /api/me FAILED ===');
-                    console.error('Status:', response.status);
-                    console.error('Status text:', response.statusText);
-                    try {
-                        const errorBody = await response.text();
-                        console.error('Error body:', errorBody);
-                    } catch (e) {
-                        console.error('Could not read error body');
-                    }
-                    forceLogout();
+                    console.error('Failed to fetch user data:', response.status);
+                    redirectToAuth();
                     return;
                 }
 
-                console.log('=== PARSING /api/me RESPONSE ===');
                 const userData = await response.json();
-                console.log('User data received:', userData);
-                console.log('User data keys:', Object.keys(userData));
-                console.log('Email:', userData.email);
-                console.log('Plan:', userData.plan);
-                console.log('Credits:', userData.credits);
 
                 // Validate response has required fields
                 if (!userData || typeof userData.email === 'undefined' || typeof userData.plan === 'undefined' || typeof userData.credits === 'undefined') {
-                    console.error('=== INVALID RESPONSE FROM /api/me ===');
-                    console.error('User data:', userData);
-                    console.error('Has email:', typeof userData.email !== 'undefined');
-                    console.error('Has plan:', typeof userData.plan !== 'undefined');
-                    console.error('Has credits:', typeof userData.credits !== 'undefined');
-                    forceLogout();
+                    console.error('Invalid response from /api/me');
+                    redirectToAuth();
                     return;
                 }
 
-                console.log('=== DISPLAYING USER DATA ===');
-                // Display email from API response (backend is source of truth)
+                // Display email
                 document.getElementById('userEmail').textContent = userData.email;
-                console.log('Email displayed:', userData.email);
+                document.getElementById('userEmail').classList.remove('loading');
 
-                // Display plan badge from API response (backend is source of truth)
+                // Display plan badge
                 const planElement = document.getElementById('userPlan');
                 if (userData.plan === 'Pro') {
                     planElement.innerHTML = '<span class="plan-badge pro">Pro</span>';
-                    console.log('Plan displayed: Pro');
                 } else {
                     planElement.innerHTML = '<span class="plan-badge free">Free</span>';
-                    console.log('Plan displayed: Free');
                 }
 
-                // Display credits from API response (backend is source of truth)
+                // Display credits
                 document.getElementById('creditsNumber').textContent = userData.credits;
-                console.log('Credits displayed:', userData.credits);
+                document.getElementById('creditsNumber').classList.remove('loading');
 
-                // Display billing buttons based on plan from API response
-                const billingButtons = document.getElementById('billingButtons');
-                if (userData.plan === 'Pro') {
-                    billingButtons.innerHTML = `
-                        <button class="billing-button secondary" onclick="alert('Billing management coming soon')">
-                            Manage Billing
-                        </button>
-                    `;
-                    console.log('Billing button: Manage Billing');
-                } else {
-                    billingButtons.innerHTML = `
-                        <button class="billing-button primary" onclick="alert('Upgrade to Pro coming soon')">
-                            Upgrade to Pro
-                        </button>
-                    `;
-                    console.log('Billing button: Upgrade to Pro');
-                }
-                
-                console.log('=== ACCOUNT INFO LOADED SUCCESSFULLY ===');
             } catch (error) {
-                console.error('=== ERROR LOADING ACCOUNT INFO ===');
-                console.error('Error object:', error);
-                console.error('Error message:', error.message);
-                console.error('Error name:', error.name);
-                console.error('Error stack:', error.stack);
-                console.error('Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
-                forceLogout();
+                console.error('Error loading account info:', error);
+                redirectToAuth();
             }
         }
 
-        // Run authentication check on page load
-        console.log('=== STARTING AUTHENTICATION CHECK ===');
-        checkAuthentication();
-
-        // Logout functionality
-        console.log('=== SETTING UP LOGOUT HANDLER ===');
-        const logoutBtn = document.getElementById('logoutBtn');
-        if (logoutBtn) {
-            logoutBtn.addEventListener('click', async () => {
-                console.log('=== LOGOUT BUTTON CLICKED ===');
-                try {
-                    console.log('Signing out from Supabase');
-                    await supabaseClient.auth.signOut();
-                    console.log('Sign out successful');
-                } catch (error) {
-                    console.error('=== LOGOUT ERROR ===');
-                    console.error('Error object:', error);
-                    console.error('Error message:', error.message);
+        // Check authentication on page load
+        async function checkAuthentication() {
+            try {
+                // Read token from localStorage
+                const storedToken = localStorage.getItem('supabase_token');
+                
+                if (!storedToken) {
+                    redirectToAuth();
+                    return;
                 }
-                
-                console.log('Clearing localStorage token');
-                localStorage.removeItem('supabase_token');
-                
-                console.log('Redirecting to auth.html');
-                window.location.href = 'auth.html';
-            });
-            console.log('Logout handler attached');
-        } else {
-            console.error('Logout button not found');
+
+                // Restore Supabase session using the token
+                const { data, error } = await supabaseClient.auth.getUser(storedToken);
+
+                if (error || !data || !data.user) {
+                    console.error('Invalid or expired token:', error);
+                    redirectToAuth();
+                    return;
+                }
+
+                // Token is valid, fetch user info from backend
+                await loadAccountInfo(storedToken);
+
+            } catch (error) {
+                console.error('Authentication check failed:', error);
+                redirectToAuth();
+            }
         }
-        
-        console.log('=== APP.HTML INITIALIZATION COMPLETE ===');
+
+        // Logout handler
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            try {
+                await supabaseClient.auth.signOut();
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
+            redirectToAuth();
+        });
+
+        // Run authentication check on page load
+        checkAuthentication();
     </script>
 </body>
 </html>

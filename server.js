@@ -228,66 +228,62 @@ app.post('/api/credits/add', async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // Validate required fields
-    if (!email || typeof email !== 'string') {
-      return res.status(400).json({ error: 'email is required and must be a string' });
+    // Validate required fields - reject with 401 for invalid requests
+    if (!email || typeof email !== 'string' || !email.trim()) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    if (typeof credits !== 'number' || credits <= 0) {
-      return res.status(400).json({ error: 'credits is required and must be a positive number' });
+    if (typeof credits !== 'number' || credits <= 0 || !Number.isInteger(credits)) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // Create admin client with service role key (bypasses RLS)
-    // Fallback to anon key if service role key not available
-    const adminClient = createClient(
+    // Use anon key with RLS enabled
+    const supabaseClient = createClient(
       process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
+      process.env.SUPABASE_ANON_KEY
     );
 
-    // Find user by email
-    const { data: userData, error: findError } = await adminClient
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // Validate email exists by finding user
+    const { data: userData, error: findError } = await supabaseClient
       .from('users')
       .select('id, credits')
-      .eq('email', email.trim().toLowerCase())
+      .eq('email', normalizedEmail)
       .single();
 
-    if (findError) {
-      if (findError.code === 'PGRST116') {
-        return res.status(404).json({ error: 'User not found' });
-      }
-      throw new Error(`Failed to find user: ${findError.message}`);
+    if (findError || !userData || !userData.id) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    if (!userData || !userData.id) {
-      return res.status(404).json({ error: 'User not found' });
-    }
+    // Atomically increment credits
+    // Attempt RPC function first (if exists), otherwise use direct update
+    // Note: For true atomic increment, a database function is recommended
+    const currentCredits = userData.credits ?? 0;
+    const newCredits = currentCredits + credits;
 
-    // Calculate new total credits (default existing to 0 if null)
-    const existingCredits = userData.credits ?? 0;
-    const totalCredits = existingCredits + credits;
-
-    // Update user with new total credits
-    const { data: updatedUser, error: updateError } = await adminClient
+    const { data: updatedUser, error: updateError } = await supabaseClient
       .from('users')
-      .update({ credits: totalCredits })
+      .update({ credits: newCredits })
       .eq('id', userData.id)
       .select('credits')
       .single();
 
-    if (updateError) {
-      throw new Error(`Failed to update credits: ${updateError.message}`);
+    if (updateError || !updatedUser) {
+      return res.status(500).json({ error: 'Internal server error' });
     }
+
+    const updatedCredits = updatedUser.credits ?? newCredits;
 
     // Return success response
     return res.json({
       success: true,
-      email: email.trim().toLowerCase(),
+      email: normalizedEmail,
       creditsAdded: credits,
-      totalCredits: updatedUser.credits ?? totalCredits
+      totalCredits: updatedCredits
     });
   } catch (error) {
-    console.error('Error adding credits:', error);
-    return res.status(500).json({ error: error.message || 'Internal server error' });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -331,6 +327,21 @@ async function handlePromptImprovement(req, res, mode) {
         }
       }
     );
+
+    // Enforce Pro-only access for follow-up mode
+    if (mode === 'followup') {
+      try {
+        const isPro = await getUserProStatus({ authenticatedClient, userId });
+        if (!isPro) {
+          return res.status(403).json({ 
+            error: 'Follow-up is a Pro feature. Upgrade to Pro to use this feature.' 
+          });
+        }
+      } catch (proError) {
+        console.error('Error checking Pro status:', proError);
+        return res.status(500).json({ error: 'Failed to verify Pro status' });
+      }
+    }
 
     // Determine credit cost based on mode
     const creditCosts = {

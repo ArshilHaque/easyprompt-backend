@@ -113,24 +113,6 @@
             transform: none;
         }
 
-        .secondary-btn {
-            width: 100%;
-            padding: 12px;
-            font-size: 14px;
-            font-weight: 500;
-            color: #6366f1;
-            background: transparent;
-            border: none;
-            cursor: pointer;
-            margin-top: 16px;
-            transition: color 0.2s ease;
-        }
-
-        .secondary-btn:hover {
-            color: #4f46e5;
-            text-decoration: underline;
-        }
-
         #errorDisplay {
             margin-top: 24px;
             padding: 16px;
@@ -153,7 +135,7 @@
             <p>Write better prompts. Faster.</p>
         </div>
 
-        <form id="auth-form" novalidate>
+        <form id="auth-form">
             <div class="form-group">
                 <label for="email">Email</label>
                 <input type="email" id="email" placeholder="Enter your email" required>
@@ -164,8 +146,7 @@
                 <input type="password" id="password" placeholder="Enter your password" required>
             </div>
 
-            <button type="button" id="login-btn" class="primary-btn">Login</button>
-            <button type="button" id="signup-btn" class="secondary-btn">Don't have an account? Sign Up</button>
+            <button type="submit" id="login-btn" class="primary-btn">Login</button>
         </form>
 
         <div id="errorDisplay"></div>
@@ -173,328 +154,84 @@
     
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
     <script>
-        console.log('=== AUTH.HTML PAGE LOAD ===');
-        console.log('Timestamp:', new Date().toISOString());
-        console.log('Window location:', window.location.href);
-        console.log('Document ready state:', document.readyState);
-
         // Supabase configuration
         const SUPABASE_URL = 'https://crqaugwmmoafvbjhrrsw.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNycWF1Z3dtbW9hZnZiamhycnN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyOTYwNjQsImV4cCI6MjA4MTg3MjA2NH0.-drXBQ22Nyhwh5Qs1LNaplHlztSPXDe0XtEEutv-rlE';
         
-        console.log('=== INITIALIZING SUPABASE CLIENT ===');
-        console.log('Supabase URL:', SUPABASE_URL);
-        console.log('Anon key present:', !!SUPABASE_ANON_KEY);
-        console.log('Supabase library loaded:', typeof supabase !== 'undefined');
-        
-        // Initialize Supabase client ONCE with session persistence
-        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-            auth: {
-                persistSession: true,
-                autoRefreshToken: true,
-                detectSessionInUrl: false
-            }
-        });
-        
-        console.log('=== SUPABASE CLIENT CREATED ===');
-        console.log('Client object:', supabaseClient);
-        console.log('Client auth:', supabaseClient.auth);
+        // Initialize Supabase client
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         // Get DOM elements
-        console.log('=== GETTING DOM ELEMENTS ===');
+        const authForm = document.getElementById('auth-form');
         const emailInput = document.getElementById('email');
         const passwordInput = document.getElementById('password');
         const loginBtn = document.getElementById('login-btn');
-        const signupBtn = document.getElementById('signup-btn');
         const errorDisplay = document.getElementById('errorDisplay');
-        const authForm = document.getElementById('auth-form');
-        
-        console.log('Email input:', emailInput);
-        console.log('Password input:', passwordInput);
-        console.log('Login button:', loginBtn);
-        console.log('Signup button:', signupBtn);
-        console.log('Error display:', errorDisplay);
-        console.log('Auth form:', authForm);
 
-        // Verify all elements exist
-        if (!emailInput || !passwordInput || !loginBtn || !signupBtn || !errorDisplay || !authForm) {
-            console.error('=== ERROR: MISSING DOM ELEMENTS ===');
-            console.error('Email input:', !!emailInput);
-            console.error('Password input:', !!passwordInput);
-            console.error('Login button:', !!loginBtn);
-            console.error('Signup button:', !!signupBtn);
-            console.error('Error display:', !!errorDisplay);
-            console.error('Auth form:', !!authForm);
-        } else {
-            console.log('=== ALL DOM ELEMENTS FOUND ===');
+        // Show error message
+        function showError(message) {
+            errorDisplay.textContent = message;
+            errorDisplay.classList.add('show');
+            console.error('EasyPrompt Auth Error:', message);
         }
 
-        // Prevent form submission - multiple layers
-        console.log('=== SETTING UP FORM SUBMISSION PREVENTION ===');
-        authForm.addEventListener('submit', function(e) {
-            console.log('=== FORM SUBMIT EVENT FIRED ===');
-            console.log('Event object:', e);
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            console.log('Form submit prevented');
-            return false;
-        }, true);
-        
-        authForm.onsubmit = function(e) {
-            console.log('=== FORM ONSUBMIT FIRED ===');
-            if (e) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-            return false;
-        };
-        
-        authForm.setAttribute('action', 'javascript:void(0);');
-        authForm.setAttribute('method', 'post');
-        console.log('Form submission prevention configured');
-
-        // Track signup mode
-        let isSignupMode = false;
-        console.log('=== SIGNUP MODE INITIALIZED ===');
-        console.log('Initial signup mode:', isSignupMode);
-
-        // Signup button handler
-        signupBtn.addEventListener('click', function() {
-            console.log('=== SIGNUP BUTTON CLICKED ===');
-            isSignupMode = !isSignupMode;
-            console.log('New signup mode:', isSignupMode);
-            if (isSignupMode) {
-                loginBtn.textContent = 'Sign Up';
-                signupBtn.textContent = 'Already have an account? Login';
-            } else {
-                loginBtn.textContent = 'Login';
-                signupBtn.textContent = 'Don\'t have an account? Sign Up';
-            }
-            console.log('Button text updated');
-        });
-
-        // Login button handler
-        console.log('=== ATTACHING LOGIN BUTTON HANDLER ===');
-        loginBtn.addEventListener('click', async function(e) {
-            console.log('=== LOGIN BUTTON CLICKED ===');
-            console.log('Event object:', e);
-            console.log('Event type:', e.type);
-            console.log('Event target:', e.target);
-            console.log('Timestamp:', new Date().toISOString());
-            
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            console.log('Event default prevented and propagation stopped');
-            
-            // Hide previous errors
+        // Hide error message
+        function hideError() {
             errorDisplay.classList.remove('show');
             errorDisplay.textContent = '';
-            console.log('Error display cleared');
+        }
 
-            // Get email and password
-            console.log('=== READING FORM VALUES ===');
+        // Form submit handler
+        authForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            hideError();
+
             const email = emailInput.value.trim();
             const password = passwordInput.value;
-            console.log('Email length:', email.length);
-            console.log('Password length:', password.length);
-            console.log('Email value (first 3 chars):', email.substring(0, 3) + '...');
 
-            // Validate
+            // Validate inputs
             if (!email || !password) {
-                console.error('=== VALIDATION FAILED ===');
-                console.error('Email empty:', !email);
-                console.error('Password empty:', !password);
-                errorDisplay.textContent = 'Please enter both email and password';
-                errorDisplay.classList.add('show');
+                showError('Please enter both email and password');
                 return;
             }
-            console.log('=== VALIDATION PASSED ===');
 
             // Disable button during request
-            console.log('=== DISABLING BUTTON ===');
             loginBtn.disabled = true;
-            loginBtn.textContent = isSignupMode ? 'Signing up...' : 'Logging in...';
-            console.log('Button disabled, text updated');
+            loginBtn.textContent = 'Logging in...';
 
             try {
-                console.log('=== STARTING AUTHENTICATION ===');
-                console.log('Mode:', isSignupMode ? 'SIGNUP' : 'LOGIN');
-                console.log('Supabase client:', supabaseClient);
-                console.log('Supabase auth:', supabaseClient.auth);
-                
-                let result;
-                
-                if (isSignupMode) {
-                    console.log('=== CALLING signUp ===');
-                    console.log('Email:', email);
-                    console.log('Password length:', password.length);
-                    result = await supabaseClient.auth.signUp({
-                        email: email,
-                        password: password
-                    });
-                    console.log('=== signUp RESULT RECEIVED ===');
-                } else {
-                    console.log('=== CALLING signInWithPassword ===');
-                    console.log('Email:', email);
-                    console.log('Password length:', password.length);
-                    result = await supabaseClient.auth.signInWithPassword({
-                        email: email,
-                        password: password
-                    });
-                    console.log('=== signInWithPassword RESULT RECEIVED ===');
-                }
+                // Sign in with Supabase
+                const { data, error } = await supabaseClient.auth.signInWithPassword({
+                    email: email,
+                    password: password
+                });
 
-                console.log('=== AUTH RESULT ANALYSIS ===');
-                console.log('Result object:', result);
-                console.log('Result.data:', result.data);
-                console.log('Result.error:', result.error);
-                console.log('Has data:', !!result.data);
-                console.log('Has error:', !!result.error);
-                console.log('Has session:', !!(result.data && result.data.session));
-
-                if (result.error) {
-                    console.error('=== AUTH ERROR DETECTED ===');
-                    console.error('Error object:', result.error);
-                    console.error('Error message:', result.error.message);
-                    console.error('Error status:', result.error.status);
-                    console.error('Error name:', result.error.name);
-                    console.error('Full error:', JSON.stringify(result.error, null, 2));
-                    errorDisplay.textContent = result.error.message || 'Authentication failed';
-                    errorDisplay.classList.add('show');
+                if (error) {
+                    showError(error.message || 'Login failed');
                     loginBtn.disabled = false;
-                    loginBtn.textContent = isSignupMode ? 'Sign Up' : 'Login';
+                    loginBtn.textContent = 'Login';
                     return;
                 }
 
-                if (!result.data || !result.data.session) {
-                    console.error('=== NO SESSION IN RESPONSE ===');
-                    console.error('Result.data:', result.data);
-                    console.error('Result.data.session:', result.data ? result.data.session : 'N/A');
-                    if (isSignupMode) {
-                        errorDisplay.textContent = 'Signup successful! Please check your email to confirm your account.';
-                        errorDisplay.classList.add('show');
-                    } else {
-                        errorDisplay.textContent = 'Login failed: No session received. Please try again.';
-                        errorDisplay.classList.add('show');
-                    }
+                if (!data || !data.session || !data.session.access_token) {
+                    showError('Login failed: No session received');
                     loginBtn.disabled = false;
-                    loginBtn.textContent = isSignupMode ? 'Sign Up' : 'Login';
+                    loginBtn.textContent = 'Login';
                     return;
                 }
 
-                // Success
-                console.log('=== AUTHENTICATION SUCCESS ===');
-                console.log('Session object:', result.data.session);
-                console.log('Session keys:', Object.keys(result.data.session));
-                console.log('Access token present:', !!result.data.session.access_token);
-                console.log('Refresh token present:', !!result.data.session.refresh_token);
-                console.log('User present:', !!result.data.session.user);
-                
-                const accessToken = result.data.session.access_token;
-                const refreshToken = result.data.session.refresh_token || '';
-                
-                console.log('=== TOKEN EXTRACTION ===');
-                console.log('Access token length:', accessToken ? accessToken.length : 0);
-                console.log('Access token (first 20 chars):', accessToken ? accessToken.substring(0, 20) + '...' : 'N/A');
-                console.log('Refresh token length:', refreshToken ? refreshToken.length : 0);
-
-                // Store token in localStorage
-                console.log('=== STORING TOKEN IN LOCALSTORAGE ===');
-                console.log('Before storage - localStorage.supabase_token:', localStorage.getItem('supabase_token') ? 'EXISTS' : 'NOT FOUND');
-                localStorage.setItem('supabase_token', accessToken);
-                console.log('After storage - localStorage.supabase_token:', localStorage.getItem('supabase_token') ? 'EXISTS' : 'NOT FOUND');
-                console.log('Stored token length:', localStorage.getItem('supabase_token') ? localStorage.getItem('supabase_token').length : 0);
-
-                // Set session in Supabase client
-                console.log('=== SETTING SESSION IN SUPABASE CLIENT ===');
-                try {
-                    const sessionResult = await supabaseClient.auth.setSession({
-                        access_token: accessToken,
-                        refresh_token: refreshToken
-                    });
-                    console.log('=== setSession RESULT ===');
-                    console.log('Session result:', sessionResult);
-                    console.log('Session result data:', sessionResult.data);
-                    console.log('Session result error:', sessionResult.error);
-                    console.log('Session set successfully:', !sessionResult.error);
-                } catch (sessionError) {
-                    console.error('=== ERROR SETTING SESSION ===');
-                    console.error('Session error object:', sessionError);
-                    console.error('Session error message:', sessionError.message);
-                    console.error('Session error stack:', sessionError.stack);
-                }
-
-                // Verify session is set
-                console.log('=== VERIFYING SESSION ===');
-                const { data: { session: currentSession }, error: sessionCheckError } = await supabaseClient.auth.getSession();
-                console.log('Current session:', currentSession);
-                console.log('Session check error:', sessionCheckError);
-                console.log('Session exists:', !!currentSession);
-                console.log('Session access token:', currentSession ? currentSession.access_token : 'N/A');
-
-                // Send token to Chrome extension (if available)
-                console.log('=== SENDING TOKEN TO CHROME EXTENSION ===');
-                try {
-                    const urlParams = new URLSearchParams(window.location.search);
-                    const extensionId = urlParams.get('extensionId') || 'llfmdhdohpbbabbjmfdekpfifehblbfa';
-                    console.log('Extension ID:', extensionId);
-                    console.log('Chrome available:', typeof chrome !== 'undefined');
-                    console.log('Chrome.runtime available:', typeof chrome !== 'undefined' && chrome.runtime);
-                    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-                        chrome.runtime.sendMessage(extensionId, {
-                            type: "SET_AUTH_TOKEN",
-                            token: accessToken
-                        });
-                        console.log('Token sent to extension');
-                    } else {
-                        console.log('Chrome extension not available, skipping');
-                    }
-                } catch (extError) {
-                    console.error('=== ERROR SENDING TO EXTENSION ===');
-                    console.error('Extension error:', extError);
-                }
+                // Store access token in localStorage
+                localStorage.setItem('supabase_token', data.session.access_token);
 
                 // Redirect to app.html
-                console.log('=== REDIRECTING TO app.html ===');
-                console.log('Current location:', window.location.href);
-                console.log('Current pathname:', window.location.pathname);
-                console.log('Current origin:', window.location.origin);
-                
-                // Determine correct redirect path based on current URL
-                let redirectPath = 'app.html';
-                if (window.location.pathname.includes('/auth')) {
-                    redirectPath = '/app';
-                } else if (window.location.pathname === '/') {
-                    redirectPath = '/app';
-                }
-                
-                console.log('Target location:', redirectPath);
-                console.log('Full redirect URL:', window.location.origin + redirectPath);
-                console.log('localStorage token before redirect:', localStorage.getItem('supabase_token') ? 'EXISTS' : 'NOT FOUND');
-                console.log('Token value (first 20 chars):', localStorage.getItem('supabase_token') ? localStorage.getItem('supabase_token').substring(0, 20) + '...' : 'N/A');
-                
-                // Use replace to prevent back button issues
-                window.location.replace(redirectPath);
+                window.location.href = 'app.html';
 
             } catch (error) {
-                console.error('=== UNEXPECTED ERROR IN AUTH FLOW ===');
-                console.error('Error object:', error);
-                console.error('Error message:', error.message);
-                console.error('Error name:', error.name);
-                console.error('Error stack:', error.stack);
-                console.error('Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
-                errorDisplay.textContent = error.message || 'An unexpected error occurred';
-                errorDisplay.classList.add('show');
+                showError(error.message || 'An unexpected error occurred');
                 loginBtn.disabled = false;
-                loginBtn.textContent = isSignupMode ? 'Sign Up' : 'Login';
+                loginBtn.textContent = 'Login';
             }
         });
-        
-        console.log('=== AUTH.HTML INITIALIZATION COMPLETE ===');
-        console.log('All event listeners attached');
-        console.log('Ready for user interaction');
     </script>
 </body>
 </html>

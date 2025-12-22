@@ -107,6 +107,12 @@
             transform: translateY(0);
         }
 
+        .primary-btn:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         .secondary-btn {
             width: 100%;
             padding: 12px;
@@ -125,35 +131,18 @@
             text-decoration: underline;
         }
 
-        #tokenDisplay {
+        #errorDisplay {
             margin-top: 24px;
             padding: 16px;
-            background: #f5f5f5;
+            background: #fee2e2;
             border-radius: 8px;
             font-size: 14px;
-        }
-
-        #tokenDisplay h2 {
-            font-size: 16px;
-            margin-bottom: 8px;
-            color: #333;
-        }
-
-        #tokenDisplay pre {
-            font-size: 12px;
-            color: #666;
-            word-break: break-all;
-            white-space: pre-wrap;
-        }
-
-        #tokenDisplay p {
             color: #dc2626;
-            font-size: 14px;
-            line-height: 1.5;
+            display: none;
         }
 
-        .hidden {
-            display: none;
+        #errorDisplay.show {
+            display: block;
         }
     </style>
 </head>
@@ -164,7 +153,7 @@
             <p>Write better prompts. Faster.</p>
         </div>
 
-        <form id="authForm">
+        <form id="auth-form" novalidate>
             <div class="form-group">
                 <label for="email">Email</label>
                 <input type="email" id="email" placeholder="Enter your email" required>
@@ -175,92 +164,106 @@
                 <input type="password" id="password" placeholder="Enter your password" required>
             </div>
 
-            <button type="submit" id="loginBtn" class="primary-btn">Login</button>
-            <button type="button" id="signupBtn" class="secondary-btn">Don't have an account? Sign Up</button>
+            <button type="button" id="login-btn" class="primary-btn">Login</button>
+            <button type="button" id="signup-btn" class="secondary-btn">Don't have an account? Sign Up</button>
         </form>
 
-        <div id="tokenDisplay" class="hidden"></div>
+        <div id="errorDisplay"></div>
     </div>
     
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
     <script>
-        // Placeholder Supabase configuration
+        console.log('=== AUTH.HTML PAGE LOAD ===');
+        console.log('Timestamp:', new Date().toISOString());
+        console.log('Window location:', window.location.href);
+        console.log('Document ready state:', document.readyState);
+
+        // Supabase configuration
         const SUPABASE_URL = 'https://crqaugwmmoafvbjhrrsw.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNycWF1Z3dtbW9hZnZiamhycnN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyOTYwNjQsImV4cCI6MjA4MTg3MjA2NH0.-drXBQ22Nyhwh5Qs1LNaplHlztSPXDe0XtEEutv-rlE';
         
-        // Initialize Supabase client
-        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        console.log('=== INITIALIZING SUPABASE CLIENT ===');
+        console.log('Supabase URL:', SUPABASE_URL);
+        console.log('Anon key present:', !!SUPABASE_ANON_KEY);
+        console.log('Supabase library loaded:', typeof supabase !== 'undefined');
         
+        // Initialize Supabase client ONCE with session persistence
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            auth: {
+                persistSession: true,
+                autoRefreshToken: true,
+                detectSessionInUrl: false
+            }
+        });
+        
+        console.log('=== SUPABASE CLIENT CREATED ===');
+        console.log('Client object:', supabaseClient);
+        console.log('Client auth:', supabaseClient.auth);
+
         // Get DOM elements
+        console.log('=== GETTING DOM ELEMENTS ===');
         const emailInput = document.getElementById('email');
         const passwordInput = document.getElementById('password');
-        const loginBtn = document.getElementById('loginBtn');
-        const signupBtn = document.getElementById('signupBtn');
-        const tokenDisplay = document.getElementById('tokenDisplay');
+        const loginBtn = document.getElementById('login-btn');
+        const signupBtn = document.getElementById('signup-btn');
+        const errorDisplay = document.getElementById('errorDisplay');
+        const authForm = document.getElementById('auth-form');
         
-        // Function to send access token to Chrome extension
-        function sendTokenToExtension(accessToken) {
-            try {
-                // Try to get extension ID dynamically from URL parameters or other means
-                const urlParams = new URLSearchParams(window.location.search);
-                const extensionId = urlParams.get('extensionId') || 'llfmdhdohpbbabbjmfdekpfifehblbfa';
-                
-                // Check if chrome.runtime is available
-                if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-                    chrome.runtime.sendMessage(extensionId, {
-                        type: "SET_AUTH_TOKEN",
-                        token: accessToken
-                    }, (response) => {
-                        // Handle errors silently - no action needed
-                    });
-                }
-            } catch (error) {
-                // Handle errors silently - no action needed
-            }
-        }
-        
-        // Track current mode (login or signup)
-        let isSignupMode = false;
+        console.log('Email input:', emailInput);
+        console.log('Password input:', passwordInput);
+        console.log('Login button:', loginBtn);
+        console.log('Signup button:', signupBtn);
+        console.log('Error display:', errorDisplay);
+        console.log('Auth form:', authForm);
 
-        // Function to handle successful authentication
-        async function handleAuthSuccess(data) {
-            const accessToken = data.session.access_token;
-            const refreshToken = data.session.refresh_token || '';
-            
-            // Log token to console
-            console.log('Access Token:', accessToken);
-            
-            // Send token to Chrome extension
-            sendTokenToExtension(accessToken);
-            
-            // Store token in localStorage for app.html to access
-            localStorage.setItem('supabase_token', accessToken);
-            
-            // Set the session in Supabase client to ensure it's active
-            try {
-                await supabaseClient.auth.setSession({
-                    access_token: accessToken,
-                    refresh_token: refreshToken
-                });
-            } catch (sessionError) {
-                console.error('Error setting session:', sessionError);
-                // Continue anyway - token is stored in localStorage
+        // Verify all elements exist
+        if (!emailInput || !passwordInput || !loginBtn || !signupBtn || !errorDisplay || !authForm) {
+            console.error('=== ERROR: MISSING DOM ELEMENTS ===');
+            console.error('Email input:', !!emailInput);
+            console.error('Password input:', !!passwordInput);
+            console.error('Login button:', !!loginBtn);
+            console.error('Signup button:', !!signupBtn);
+            console.error('Error display:', !!errorDisplay);
+            console.error('Auth form:', !!authForm);
+        } else {
+            console.log('=== ALL DOM ELEMENTS FOUND ===');
+        }
+
+        // Prevent form submission - multiple layers
+        console.log('=== SETTING UP FORM SUBMISSION PREVENTION ===');
+        authForm.addEventListener('submit', function(e) {
+            console.log('=== FORM SUBMIT EVENT FIRED ===');
+            console.log('Event object:', e);
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            console.log('Form submit prevented');
+            return false;
+        }, true);
+        
+        authForm.onsubmit = function(e) {
+            console.log('=== FORM ONSUBMIT FIRED ===');
+            if (e) {
+                e.preventDefault();
+                e.stopPropagation();
             }
-            
-            // Redirect to app.html
-            window.location.href = 'app.html';
-        }
+            return false;
+        };
         
-        // Function to handle errors
-        function handleError(error) {
-            tokenDisplay.classList.remove('hidden');
-            tokenDisplay.innerHTML = '<p>Error: ' + error.message + '</p>';
-            console.error('Authentication error:', error);
-        }
-        
-        // Toggle between login and signup modes
-        signupBtn.addEventListener('click', () => {
+        authForm.setAttribute('action', 'javascript:void(0);');
+        authForm.setAttribute('method', 'post');
+        console.log('Form submission prevention configured');
+
+        // Track signup mode
+        let isSignupMode = false;
+        console.log('=== SIGNUP MODE INITIALIZED ===');
+        console.log('Initial signup mode:', isSignupMode);
+
+        // Signup button handler
+        signupBtn.addEventListener('click', function() {
+            console.log('=== SIGNUP BUTTON CLICKED ===');
             isSignupMode = !isSignupMode;
+            console.log('New signup mode:', isSignupMode);
             if (isSignupMode) {
                 loginBtn.textContent = 'Sign Up';
                 signupBtn.textContent = 'Already have an account? Login';
@@ -268,77 +271,230 @@
                 loginBtn.textContent = 'Login';
                 signupBtn.textContent = 'Don\'t have an account? Sign Up';
             }
+            console.log('Button text updated');
         });
 
-        // Form submission handler
-        const authForm = document.getElementById('authForm');
-        authForm.addEventListener('submit', async (e) => {
+        // Login button handler
+        console.log('=== ATTACHING LOGIN BUTTON HANDLER ===');
+        loginBtn.addEventListener('click', async function(e) {
+            console.log('=== LOGIN BUTTON CLICKED ===');
+            console.log('Event object:', e);
+            console.log('Event type:', e.type);
+            console.log('Event target:', e.target);
+            console.log('Timestamp:', new Date().toISOString());
+            
             e.preventDefault();
             e.stopPropagation();
+            e.stopImmediatePropagation();
+            console.log('Event default prevented and propagation stopped');
             
-            console.log('Form submitted');
-            
+            // Hide previous errors
+            errorDisplay.classList.remove('show');
+            errorDisplay.textContent = '';
+            console.log('Error display cleared');
+
+            // Get email and password
+            console.log('=== READING FORM VALUES ===');
             const email = emailInput.value.trim();
             const password = passwordInput.value;
-            
+            console.log('Email length:', email.length);
+            console.log('Password length:', password.length);
+            console.log('Email value (first 3 chars):', email.substring(0, 3) + '...');
+
+            // Validate
             if (!email || !password) {
-                handleError({ message: 'Please enter both email and password' });
+                console.error('=== VALIDATION FAILED ===');
+                console.error('Email empty:', !email);
+                console.error('Password empty:', !password);
+                errorDisplay.textContent = 'Please enter both email and password';
+                errorDisplay.classList.add('show');
                 return;
             }
-            
-            // Disable form during submission
+            console.log('=== VALIDATION PASSED ===');
+
+            // Disable button during request
+            console.log('=== DISABLING BUTTON ===');
             loginBtn.disabled = true;
             loginBtn.textContent = isSignupMode ? 'Signing up...' : 'Logging in...';
-            
+            console.log('Button disabled, text updated');
+
             try {
-                let data, error;
+                console.log('=== STARTING AUTHENTICATION ===');
+                console.log('Mode:', isSignupMode ? 'SIGNUP' : 'LOGIN');
+                console.log('Supabase client:', supabaseClient);
+                console.log('Supabase auth:', supabaseClient.auth);
+                
+                let result;
                 
                 if (isSignupMode) {
-                    const result = await supabaseClient.auth.signUp({
+                    console.log('=== CALLING signUp ===');
+                    console.log('Email:', email);
+                    console.log('Password length:', password.length);
+                    result = await supabaseClient.auth.signUp({
                         email: email,
                         password: password
                     });
-                    data = result.data;
-                    error = result.error;
-                    
-                    // Signup might not return session immediately if email confirmation is required
-                    if (!error && (!data || !data.session)) {
-                        handleError({ message: 'Signup successful! Please check your email to confirm your account.' });
-                        loginBtn.disabled = false;
-                        loginBtn.textContent = isSignupMode ? 'Sign Up' : 'Login';
-                        return;
-                    }
+                    console.log('=== signUp RESULT RECEIVED ===');
                 } else {
-                    const result = await supabaseClient.auth.signInWithPassword({
+                    console.log('=== CALLING signInWithPassword ===');
+                    console.log('Email:', email);
+                    console.log('Password length:', password.length);
+                    result = await supabaseClient.auth.signInWithPassword({
                         email: email,
                         password: password
                     });
-                    data = result.data;
-                    error = result.error;
+                    console.log('=== signInWithPassword RESULT RECEIVED ===');
+                }
+
+                console.log('=== AUTH RESULT ANALYSIS ===');
+                console.log('Result object:', result);
+                console.log('Result.data:', result.data);
+                console.log('Result.error:', result.error);
+                console.log('Has data:', !!result.data);
+                console.log('Has error:', !!result.error);
+                console.log('Has session:', !!(result.data && result.data.session));
+
+                if (result.error) {
+                    console.error('=== AUTH ERROR DETECTED ===');
+                    console.error('Error object:', result.error);
+                    console.error('Error message:', result.error.message);
+                    console.error('Error status:', result.error.status);
+                    console.error('Error name:', result.error.name);
+                    console.error('Full error:', JSON.stringify(result.error, null, 2));
+                    errorDisplay.textContent = result.error.message || 'Authentication failed';
+                    errorDisplay.classList.add('show');
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = isSignupMode ? 'Sign Up' : 'Login';
+                    return;
+                }
+
+                if (!result.data || !result.data.session) {
+                    console.error('=== NO SESSION IN RESPONSE ===');
+                    console.error('Result.data:', result.data);
+                    console.error('Result.data.session:', result.data ? result.data.session : 'N/A');
+                    if (isSignupMode) {
+                        errorDisplay.textContent = 'Signup successful! Please check your email to confirm your account.';
+                        errorDisplay.classList.add('show');
+                    } else {
+                        errorDisplay.textContent = 'Login failed: No session received. Please try again.';
+                        errorDisplay.classList.add('show');
+                    }
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = isSignupMode ? 'Sign Up' : 'Login';
+                    return;
+                }
+
+                // Success
+                console.log('=== AUTHENTICATION SUCCESS ===');
+                console.log('Session object:', result.data.session);
+                console.log('Session keys:', Object.keys(result.data.session));
+                console.log('Access token present:', !!result.data.session.access_token);
+                console.log('Refresh token present:', !!result.data.session.refresh_token);
+                console.log('User present:', !!result.data.session.user);
+                
+                const accessToken = result.data.session.access_token;
+                const refreshToken = result.data.session.refresh_token || '';
+                
+                console.log('=== TOKEN EXTRACTION ===');
+                console.log('Access token length:', accessToken ? accessToken.length : 0);
+                console.log('Access token (first 20 chars):', accessToken ? accessToken.substring(0, 20) + '...' : 'N/A');
+                console.log('Refresh token length:', refreshToken ? refreshToken.length : 0);
+
+                // Store token in localStorage
+                console.log('=== STORING TOKEN IN LOCALSTORAGE ===');
+                console.log('Before storage - localStorage.supabase_token:', localStorage.getItem('supabase_token') ? 'EXISTS' : 'NOT FOUND');
+                localStorage.setItem('supabase_token', accessToken);
+                console.log('After storage - localStorage.supabase_token:', localStorage.getItem('supabase_token') ? 'EXISTS' : 'NOT FOUND');
+                console.log('Stored token length:', localStorage.getItem('supabase_token') ? localStorage.getItem('supabase_token').length : 0);
+
+                // Set session in Supabase client
+                console.log('=== SETTING SESSION IN SUPABASE CLIENT ===');
+                try {
+                    const sessionResult = await supabaseClient.auth.setSession({
+                        access_token: accessToken,
+                        refresh_token: refreshToken
+                    });
+                    console.log('=== setSession RESULT ===');
+                    console.log('Session result:', sessionResult);
+                    console.log('Session result data:', sessionResult.data);
+                    console.log('Session result error:', sessionResult.error);
+                    console.log('Session set successfully:', !sessionResult.error);
+                } catch (sessionError) {
+                    console.error('=== ERROR SETTING SESSION ===');
+                    console.error('Session error object:', sessionError);
+                    console.error('Session error message:', sessionError.message);
+                    console.error('Session error stack:', sessionError.stack);
+                }
+
+                // Verify session is set
+                console.log('=== VERIFYING SESSION ===');
+                const { data: { session: currentSession }, error: sessionCheckError } = await supabaseClient.auth.getSession();
+                console.log('Current session:', currentSession);
+                console.log('Session check error:', sessionCheckError);
+                console.log('Session exists:', !!currentSession);
+                console.log('Session access token:', currentSession ? currentSession.access_token : 'N/A');
+
+                // Send token to Chrome extension (if available)
+                console.log('=== SENDING TOKEN TO CHROME EXTENSION ===');
+                try {
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const extensionId = urlParams.get('extensionId') || 'llfmdhdohpbbabbjmfdekpfifehblbfa';
+                    console.log('Extension ID:', extensionId);
+                    console.log('Chrome available:', typeof chrome !== 'undefined');
+                    console.log('Chrome.runtime available:', typeof chrome !== 'undefined' && chrome.runtime);
+                    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+                        chrome.runtime.sendMessage(extensionId, {
+                            type: "SET_AUTH_TOKEN",
+                            token: accessToken
+                        });
+                        console.log('Token sent to extension');
+                    } else {
+                        console.log('Chrome extension not available, skipping');
+                    }
+                } catch (extError) {
+                    console.error('=== ERROR SENDING TO EXTENSION ===');
+                    console.error('Extension error:', extError);
+                }
+
+                // Redirect to app.html
+                console.log('=== REDIRECTING TO app.html ===');
+                console.log('Current location:', window.location.href);
+                console.log('Current pathname:', window.location.pathname);
+                console.log('Current origin:', window.location.origin);
+                
+                // Determine correct redirect path based on current URL
+                let redirectPath = 'app.html';
+                if (window.location.pathname.includes('/auth')) {
+                    redirectPath = '/app';
+                } else if (window.location.pathname === '/') {
+                    redirectPath = '/app';
                 }
                 
-                if (error) {
-                    console.error('Auth error:', error);
-                    handleError(error);
-                    loginBtn.disabled = false;
-                    loginBtn.textContent = isSignupMode ? 'Sign Up' : 'Login';
-                } else if (!data || !data.session) {
-                    console.error('No session in response:', data);
-                    handleError({ message: 'Login failed: No session received. Please try again.' });
-                    loginBtn.disabled = false;
-                    loginBtn.textContent = isSignupMode ? 'Sign Up' : 'Login';
-                } else {
-                    console.log('Login successful, redirecting...');
-                    await handleAuthSuccess(data);
-                }
+                console.log('Target location:', redirectPath);
+                console.log('Full redirect URL:', window.location.origin + redirectPath);
+                console.log('localStorage token before redirect:', localStorage.getItem('supabase_token') ? 'EXISTS' : 'NOT FOUND');
+                console.log('Token value (first 20 chars):', localStorage.getItem('supabase_token') ? localStorage.getItem('supabase_token').substring(0, 20) + '...' : 'N/A');
+                
+                // Use replace to prevent back button issues
+                window.location.replace(redirectPath);
+
             } catch (error) {
-                console.error('Unexpected error:', error);
-                handleError(error);
+                console.error('=== UNEXPECTED ERROR IN AUTH FLOW ===');
+                console.error('Error object:', error);
+                console.error('Error message:', error.message);
+                console.error('Error name:', error.name);
+                console.error('Error stack:', error.stack);
+                console.error('Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+                errorDisplay.textContent = error.message || 'An unexpected error occurred';
+                errorDisplay.classList.add('show');
                 loginBtn.disabled = false;
                 loginBtn.textContent = isSignupMode ? 'Sign Up' : 'Login';
             }
         });
+        
+        console.log('=== AUTH.HTML INITIALIZATION COMPLETE ===');
+        console.log('All event listeners attached');
+        console.log('Ready for user interaction');
     </script>
 </body>
 </html>
-

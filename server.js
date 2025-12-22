@@ -6,9 +6,15 @@ import OpenAI from 'openai';
 import { verifyUserFromToken } from './authHelpers.js';
 import { savePromptHistory, savePrompt } from './historyHelpers.js';
 import { getUserProStatus, getUserCredits, deductCredits } from './userHelpers.js';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
 // Load environment variables
 dotenv.config();
+
+// Get current directory for serving static files
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Initialize OpenAI client
 if (!process.env.OPENAI_API_KEY) {
@@ -26,6 +32,22 @@ app.use(cors());
 
 // Enable JSON body parsing
 app.use(express.json());
+
+// Serve static files (HTML, CSS, JS)
+app.use(express.static(__dirname));
+
+// Route handlers for HTML files
+app.get('/', (req, res) => {
+  res.sendFile(join(__dirname, 'auth.html'));
+});
+
+app.get('/auth', (req, res) => {
+  res.sendFile(join(__dirname, 'auth.html'));
+});
+
+app.get('/app', (req, res) => {
+  res.sendFile(join(__dirname, 'app.html'));
+});
 
 // POST /api/history/save
 app.post('/api/history/save', async (req, res) => {
@@ -193,6 +215,79 @@ app.get('/api/me', async (req, res) => {
     // Other errors
     console.error('Error getting user data:', error);
     return res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/credits/add - Admin-only endpoint to add credits to a user
+app.post('/api/credits/add', async (req, res) => {
+  try {
+    const { email, credits, secret } = req.body;
+
+    // Validate secret
+    if (!secret || secret !== process.env.ADMIN_SECRET) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Validate required fields
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ error: 'email is required and must be a string' });
+    }
+
+    if (typeof credits !== 'number' || credits <= 0) {
+      return res.status(400).json({ error: 'credits is required and must be a positive number' });
+    }
+
+    // Create admin client with service role key (bypasses RLS)
+    // Fallback to anon key if service role key not available
+    const adminClient = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
+    );
+
+    // Find user by email
+    const { data: userData, error: findError } = await adminClient
+      .from('users')
+      .select('id, credits')
+      .eq('email', email.trim().toLowerCase())
+      .single();
+
+    if (findError) {
+      if (findError.code === 'PGRST116') {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      throw new Error(`Failed to find user: ${findError.message}`);
+    }
+
+    if (!userData || !userData.id) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Calculate new total credits (default existing to 0 if null)
+    const existingCredits = userData.credits ?? 0;
+    const totalCredits = existingCredits + credits;
+
+    // Update user with new total credits
+    const { data: updatedUser, error: updateError } = await adminClient
+      .from('users')
+      .update({ credits: totalCredits })
+      .eq('id', userData.id)
+      .select('credits')
+      .single();
+
+    if (updateError) {
+      throw new Error(`Failed to update credits: ${updateError.message}`);
+    }
+
+    // Return success response
+    return res.json({
+      success: true,
+      email: email.trim().toLowerCase(),
+      creditsAdded: credits,
+      totalCredits: updatedUser.credits ?? totalCredits
+    });
+  } catch (error) {
+    console.error('Error adding credits:', error);
+    return res.status(500).json({ error: error.message || 'Internal server error' });
   }
 });
 

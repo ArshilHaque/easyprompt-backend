@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EasyPrompt - Account</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+
+        .logo {
+            font-size: 20px;
+            font-weight: 700;
+            color: #1a1a1a;
+            letter-spacing: -0.5px;
+        }
+
+        .logout-btn {
+            padding: 8px 16px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            background: transparent;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .logout-btn:hover {
+            color: #1a1a1a;
+            border-color: #ccc;
+            background: #f9f9f9;
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 24px;
+        }
+
+        .account-card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            padding: 48px;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        /* Main Message Section */
+        .main-message {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .main-message p {
+            font-size: 16px;
+            color: #4b5563;
+            line-height: 1.6;
+            margin-bottom: 24px;
+        }
+
+        .cta-button {
+            width: 100%;
+            padding: 16px;
+            font-size: 16px;
+            font-weight: 600;
+            color: white;
+            background: #6366f1;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            display: block;
+            text-align: center;
+        }
+
+        .cta-button:hover {
+            background: #4f46e5;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
+
+        .cta-button:active {
+            transform: translateY(0);
+        }
+
+        /* Section Styling */
+        .section {
+            border-top: 1px solid #e0e0e0;
+            padding-top: 24px;
+            margin-top: 32px;
+        }
+
+        .section:first-of-type {
+            border-top: none;
+            padding-top: 0;
+            margin-top: 0;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 16px;
+        }
+
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .info-item:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            font-size: 14px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .info-value {
+            font-size: 14px;
+            color: #1a1a1a;
+            font-weight: 600;
+        }
+
+        .plan-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .plan-badge.free {
+            background: #f3f4f6;
+            color: #374151;
+        }
+
+        .plan-badge.pro {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .credits-number {
+            font-size: 24px;
+            font-weight: 700;
+            color: #6366f1;
+            margin-bottom: 8px;
+        }
+
+        .credits-explanation {
+            font-size: 13px;
+            color: #6b7280;
+            line-height: 1.5;
+        }
+
+        .billing-button {
+            width: 100%;
+            padding: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-top: 8px;
+        }
+
+        .billing-button.primary {
+            color: white;
+            background: #6366f1;
+        }
+
+        .billing-button.primary:hover {
+            background: #4f46e5;
+        }
+
+        .billing-button.secondary {
+            color: #6366f1;
+            background: transparent;
+            border: 2px solid #6366f1;
+        }
+
+        .billing-button.secondary:hover {
+            background: #f5f7fa;
+        }
+
+        .auth-checking {
+            display: none;
+        }
+
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            .account-card {
+                padding: 32px 24px;
+            }
+
+            .main-message p {
+                font-size: 14px;
+            }
+
+            .header {
+                padding: 12px 16px;
+            }
+
+            .logo {
+                font-size: 18px;
+            }
+        }
+    </style>
+</head>
+<body class="auth-checking">
+    <!-- Header -->
+    <div class="header">
+        <div class="logo">EasyPrompt</div>
+        <button class="logout-btn" id="logoutBtn">Logout</button>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="account-card">
+            <!-- Main Message -->
+            <div class="main-message">
+                <p>EasyPrompt works directly inside ChatGPT via the Chrome extension.</p>
+                <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener noreferrer" class="cta-button">
+                    Download Chrome Extension
+                </a>
+            </div>
+
+            <!-- Account Section -->
+            <div class="section">
+                <h2 class="section-title">Account</h2>
+                <div class="info-item">
+                    <span class="info-label">Email</span>
+                    <span class="info-value" id="userEmail">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Plan</span>
+                    <span class="info-value" id="userPlan">Loading...</span>
+                </div>
+            </div>
+
+            <!-- Credits Section -->
+            <div class="section">
+                <h2 class="section-title">Credits</h2>
+                <div class="credits-number" id="creditsNumber">0</div>
+                <div class="credits-explanation">
+                    Credits are used when improving or refining prompts inside the extension.
+                </div>
+            </div>
+
+            <!-- Billing Section -->
+            <div class="section">
+                <h2 class="section-title">Billing</h2>
+                <div id="billingButtons">
+                    <!-- Buttons will be inserted here based on plan -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+    <script>
+        // Supabase configuration
+        const SUPABASE_URL = 'https://crqaugwmmoafvbjhrrsw.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNycWF1Z3dtbW9hZnZiamhycnN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyOTYwNjQsImV4cCI6MjA4MTg3MjA2NH0.-drXBQ22Nyhwh5Qs1LNaplHlztSPXDe0XtEEutv-rlE';
+        
+        // Backend API URL
+        const API_BASE_URL = 'http://localhost:3000';
+        
+        // Initialize Supabase client
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // Force logout function
+        function forceLogout() {
+            localStorage.removeItem('supabase_token');
+            window.location.href = 'auth.html';
+        }
+
+        // Check authentication on page load
+        async function checkAuthentication() {
+            try {
+                // First, try to get existing session from Supabase client
+                let { data: { session }, error } = await supabaseClient.auth.getSession();
+                
+                // If no session, try to restore from localStorage
+                if (!session || error) {
+                    const storedToken = localStorage.getItem('supabase_token');
+                    if (storedToken) {
+                        // Verify token is valid by getting user info
+                        try {
+                            const { data: { user }, error: userError } = await supabaseClient.auth.getUser(storedToken);
+                            if (userError || !user) {
+                                // Token is invalid, clear it and logout
+                                localStorage.removeItem('supabase_token');
+                                forceLogout();
+                                return;
+                            }
+                            // Token is valid, create session object
+                            session = {
+                                access_token: storedToken,
+                                refresh_token: '',
+                                user: user
+                            };
+                        } catch (tokenError) {
+                            // Token validation failed, clear it and logout
+                            console.error('Token validation failed:', tokenError);
+                            localStorage.removeItem('supabase_token');
+                            forceLogout();
+                            return;
+                        }
+                    } else {
+                        // No stored token and no session - redirect to login
+                        forceLogout();
+                        return;
+                    }
+                }
+
+                // Verify we have a valid session with access_token
+                if (!session || !session.access_token) {
+                    console.error('Invalid session - missing access_token');
+                    forceLogout();
+                    return;
+                }
+                
+                // Session is valid, allow page to render
+                document.body.classList.remove('auth-checking');
+                
+                // Load user account info using session.access_token
+                await loadAccountInfo(session);
+            } catch (error) {
+                // Any error during authentication check - force logout
+                console.error('Authentication check failed:', error);
+                forceLogout();
+            }
+        }
+
+        // Load account information
+        async function loadAccountInfo(session) {
+            // Extract access token from session
+            if (!session || !session.access_token) {
+                console.error('No access token in session');
+                forceLogout();
+                return;
+            }
+
+            const accessToken = session.access_token;
+
+            try {
+                // Call GET /api/me with Authorization header
+                const response = await fetch(`${API_BASE_URL}/api/me`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                // If /api/me fails for any reason, force logout
+                if (!response.ok) {
+                    console.error(`/api/me failed with status ${response.status}`);
+                    forceLogout();
+                    return;
+                }
+
+                const userData = await response.json();
+
+                // Validate response has required fields
+                if (!userData || typeof userData.email === 'undefined' || typeof userData.plan === 'undefined' || typeof userData.credits === 'undefined') {
+                    console.error('Invalid response from /api/me:', userData);
+                    forceLogout();
+                    return;
+                }
+
+                // Display email from API response (backend is source of truth)
+                document.getElementById('userEmail').textContent = userData.email;
+
+                // Display plan badge from API response (backend is source of truth)
+                const planElement = document.getElementById('userPlan');
+                if (userData.plan === 'Pro') {
+                    planElement.innerHTML = '<span class="plan-badge pro">Pro</span>';
+                } else {
+                    planElement.innerHTML = '<span class="plan-badge free">Free</span>';
+                }
+
+                // Display credits from API response (backend is source of truth)
+                document.getElementById('creditsNumber').textContent = userData.credits;
+
+                // Display billing buttons based on plan from API response
+                const billingButtons = document.getElementById('billingButtons');
+                if (userData.plan === 'Pro') {
+                    billingButtons.innerHTML = `
+                        <button class="billing-button secondary" onclick="alert('Billing management coming soon')">
+                            Manage Billing
+                        </button>
+                    `;
+                } else {
+                    billingButtons.innerHTML = `
+                        <button class="billing-button primary" onclick="alert('Upgrade to Pro coming soon')">
+                            Upgrade to Pro
+                        </button>
+                    `;
+                }
+            } catch (error) {
+                // Any error from /api/me forces logout
+                console.error('Error loading account info:', error);
+                forceLogout();
+            }
+        }
+
+        // Run authentication check on page load
+        checkAuthentication();
+
+        // Logout functionality
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            try {
+                // Sign out from Supabase
+                await supabaseClient.auth.signOut();
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
+            
+            // Clear localStorage
+            localStorage.removeItem('supabase_token');
+            
+            // Redirect to auth page
+            window.location.href = 'auth.html';
+        });
+    </script>
+</body>
+</html>

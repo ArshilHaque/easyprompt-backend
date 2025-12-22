@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EasyPrompt - Login</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .auth-container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            padding: 48px 40px;
+            width: 100%;
+            max-width: 420px;
+        }
+
+        .auth-header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .auth-header h1 {
+            font-size: 32px;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 8px;
+            letter-spacing: -0.5px;
+        }
+
+        .auth-header p {
+            font-size: 16px;
+            color: #666;
+            font-weight: 400;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px 16px;
+            font-size: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+            background: #fafafa;
+            color: #1a1a1a;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #6366f1;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+        }
+
+        .form-group input::placeholder {
+            color: #999;
+        }
+
+        .primary-btn {
+            width: 100%;
+            padding: 14px;
+            font-size: 16px;
+            font-weight: 600;
+            color: white;
+            background: #6366f1;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-top: 8px;
+        }
+
+        .primary-btn:hover {
+            background: #4f46e5;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
+
+        .primary-btn:active {
+            transform: translateY(0);
+        }
+
+        .secondary-btn {
+            width: 100%;
+            padding: 12px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #6366f1;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            margin-top: 16px;
+            transition: color 0.2s ease;
+        }
+
+        .secondary-btn:hover {
+            color: #4f46e5;
+            text-decoration: underline;
+        }
+
+        #tokenDisplay {
+            margin-top: 24px;
+            padding: 16px;
+            background: #f5f5f5;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        #tokenDisplay h2 {
+            font-size: 16px;
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        #tokenDisplay pre {
+            font-size: 12px;
+            color: #666;
+            word-break: break-all;
+            white-space: pre-wrap;
+        }
+
+        #tokenDisplay p {
+            color: #dc2626;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="auth-container">
+        <div class="auth-header">
+            <h1>EasyPrompt</h1>
+            <p>Write better prompts. Faster.</p>
+        </div>
+
+        <form id="authForm">
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" placeholder="Enter your email" required>
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" placeholder="Enter your password" required>
+            </div>
+
+            <button type="submit" id="loginBtn" class="primary-btn">Login</button>
+            <button type="button" id="signupBtn" class="secondary-btn">Don't have an account? Sign Up</button>
+        </form>
+
+        <div id="tokenDisplay" class="hidden"></div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+    <script>
+        // Placeholder Supabase configuration
+        const SUPABASE_URL = 'https://crqaugwmmoafvbjhrrsw.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNycWF1Z3dtbW9hZnZiamhycnN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyOTYwNjQsImV4cCI6MjA4MTg3MjA2NH0.-drXBQ22Nyhwh5Qs1LNaplHlztSPXDe0XtEEutv-rlE';
+        
+        // Initialize Supabase client
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        // Get DOM elements
+        const emailInput = document.getElementById('email');
+        const passwordInput = document.getElementById('password');
+        const loginBtn = document.getElementById('loginBtn');
+        const signupBtn = document.getElementById('signupBtn');
+        const tokenDisplay = document.getElementById('tokenDisplay');
+        
+        // Function to send access token to Chrome extension
+        function sendTokenToExtension(accessToken) {
+            try {
+                // Try to get extension ID dynamically from URL parameters or other means
+                const urlParams = new URLSearchParams(window.location.search);
+                const extensionId = urlParams.get('extensionId') || 'llfmdhdohpbbabbjmfdekpfifehblbfa';
+                
+                // Check if chrome.runtime is available
+                if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+                    chrome.runtime.sendMessage(extensionId, {
+                        type: "SET_AUTH_TOKEN",
+                        token: accessToken
+                    }, (response) => {
+                        // Handle errors silently - no action needed
+                    });
+                }
+            } catch (error) {
+                // Handle errors silently - no action needed
+            }
+        }
+        
+        // Track current mode (login or signup)
+        let isSignupMode = false;
+
+        // Function to handle successful authentication
+        async function handleAuthSuccess(data) {
+            const accessToken = data.session.access_token;
+            const refreshToken = data.session.refresh_token || '';
+            
+            // Log token to console
+            console.log('Access Token:', accessToken);
+            
+            // Send token to Chrome extension
+            sendTokenToExtension(accessToken);
+            
+            // Store token in localStorage for app.html to access
+            localStorage.setItem('supabase_token', accessToken);
+            
+            // Set the session in Supabase client to ensure it's active
+            try {
+                await supabaseClient.auth.setSession({
+                    access_token: accessToken,
+                    refresh_token: refreshToken
+                });
+            } catch (sessionError) {
+                console.error('Error setting session:', sessionError);
+                // Continue anyway - token is stored in localStorage
+            }
+            
+            // Redirect to app.html
+            window.location.href = 'app.html';
+        }
+        
+        // Function to handle errors
+        function handleError(error) {
+            tokenDisplay.classList.remove('hidden');
+            tokenDisplay.innerHTML = '<p>Error: ' + error.message + '</p>';
+            console.error('Authentication error:', error);
+        }
+        
+        // Toggle between login and signup modes
+        signupBtn.addEventListener('click', () => {
+            isSignupMode = !isSignupMode;
+            if (isSignupMode) {
+                loginBtn.textContent = 'Sign Up';
+                signupBtn.textContent = 'Already have an account? Login';
+            } else {
+                loginBtn.textContent = 'Login';
+                signupBtn.textContent = 'Don\'t have an account? Sign Up';
+            }
+        });
+
+        // Form submission handler
+        const authForm = document.getElementById('authForm');
+        authForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            console.log('Form submitted');
+            
+            const email = emailInput.value.trim();
+            const password = passwordInput.value;
+            
+            if (!email || !password) {
+                handleError({ message: 'Please enter both email and password' });
+                return;
+            }
+            
+            // Disable form during submission
+            loginBtn.disabled = true;
+            loginBtn.textContent = isSignupMode ? 'Signing up...' : 'Logging in...';
+            
+            try {
+                let data, error;
+                
+                if (isSignupMode) {
+                    const result = await supabaseClient.auth.signUp({
+                        email: email,
+                        password: password
+                    });
+                    data = result.data;
+                    error = result.error;
+                    
+                    // Signup might not return session immediately if email confirmation is required
+                    if (!error && (!data || !data.session)) {
+                        handleError({ message: 'Signup successful! Please check your email to confirm your account.' });
+                        loginBtn.disabled = false;
+                        loginBtn.textContent = isSignupMode ? 'Sign Up' : 'Login';
+                        return;
+                    }
+                } else {
+                    const result = await supabaseClient.auth.signInWithPassword({
+                        email: email,
+                        password: password
+                    });
+                    data = result.data;
+                    error = result.error;
+                }
+                
+                if (error) {
+                    console.error('Auth error:', error);
+                    handleError(error);
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = isSignupMode ? 'Sign Up' : 'Login';
+                } else if (!data || !data.session) {
+                    console.error('No session in response:', data);
+                    handleError({ message: 'Login failed: No session received. Please try again.' });
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = isSignupMode ? 'Sign Up' : 'Login';
+                } else {
+                    console.log('Login successful, redirecting...');
+                    await handleAuthSuccess(data);
+                }
+            } catch (error) {
+                console.error('Unexpected error:', error);
+                handleError(error);
+                loginBtn.disabled = false;
+                loginBtn.textContent = isSignupMode ? 'Sign Up' : 'Login';
+            }
+        });
+    </script>
+</body>
+</html>
+

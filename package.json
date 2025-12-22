@@ -1,0 +1,14 @@
+{
+  "name": "easyprompt-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Backend helpers for EasyPrompt Chrome extension",
+  "main": "index.js",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "dotenv": "^16.6.1",
+    "express": "^4.18.2",
+    "openai": "^4.20.0",
+    "cors": "^2.8.5"
+  }
+}

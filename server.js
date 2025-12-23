@@ -287,19 +287,50 @@ app.post('/api/credits/add', async (req, res) => {
   }
 });
 
+// Anonymous credit tracking (in-memory, keyed by IP)
+// This provides a simple credit system for anonymous users
+const anonymousCredits = new Map(); // IP -> credits remaining
+const ANONYMOUS_FREE_CREDITS = 5; // Free credits for anonymous users
+
+// Helper to get client IP
+function getClientIP(req) {
+  return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 
+         req.headers['x-real-ip'] || 
+         req.connection?.remoteAddress || 
+         req.socket?.remoteAddress ||
+         'unknown';
+}
+
+// Helper to get anonymous credits for an IP
+function getAnonymousCredits(ip) {
+  if (!anonymousCredits.has(ip)) {
+    anonymousCredits.set(ip, ANONYMOUS_FREE_CREDITS);
+  }
+  return anonymousCredits.get(ip);
+}
+
+// Helper to deduct anonymous credits
+function deductAnonymousCredits(ip, amount) {
+  const current = getAnonymousCredits(ip);
+  if (current < amount) {
+    throw new Error('Insufficient credits');
+  }
+  const remaining = current - amount;
+  anonymousCredits.set(ip, remaining);
+  return remaining;
+}
+
 // POST /api/prompts/improve
 // POST /api/prompts/refine
 // POST /api/prompts/followup
 // Unified endpoint handler for all prompt improvement modes
 async function handlePromptImprovement(req, res, mode) {
   try {
-    const { token, original_prompt, previous_prompt } = req.body;
+    // Get token from body or Authorization header
+    const token = req.body.token || req.headers.authorization?.replace('Bearer ', '');
+    const { original_prompt, previous_prompt } = req.body;
 
     // Validate required fields
-    if (!token) {
-      return res.status(401).json({ error: 'Missing access token' });
-    }
-
     if (!original_prompt || !original_prompt.trim()) {
       return res.status(400).json({ error: 'original_prompt is required' });
     }
@@ -310,26 +341,57 @@ async function handlePromptImprovement(req, res, mode) {
       return res.status(400).json({ error: 'Invalid mode. Must be: improve, refine, or followup' });
     }
 
-    // Verify token and get authenticated user id (never trust client input)
-    const user = await verifyUserFromToken(token);
-    const userId = user.userId;
-
-    // Create a per-request Supabase client with anon key
-    // Pass the user's access token via Authorization header for RLS
-    const authenticatedClient = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_ANON_KEY,
-      {
-        global: {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        }
-      }
-    );
-
-    // Enforce Pro-only access for follow-up mode
+    // Follow-up REQUIRES authentication
     if (mode === 'followup') {
+      if (!token) {
+        return res.status(401).json({ error: 'Authentication required. Please log in.' });
+      }
+    }
+
+    // For improve and refine, token is optional
+    let user = null;
+    let userId = null;
+    let authenticatedClient = null;
+    let isAnonymous = false;
+
+    if (token) {
+      // Try to verify token and get authenticated user
+      try {
+        user = await verifyUserFromToken(token);
+        userId = user.userId;
+
+        // Create a per-request Supabase client with anon key
+        // Pass the user's access token via Authorization header for RLS
+        authenticatedClient = createClient(
+          process.env.SUPABASE_URL,
+          process.env.SUPABASE_ANON_KEY,
+          {
+            global: {
+              headers: {
+                Authorization: `Bearer ${token}`
+              }
+            }
+          }
+        );
+      } catch (authError) {
+        // If token is invalid, treat as anonymous for improve/refine
+        if (mode === 'followup') {
+          return res.status(401).json({ error: 'Invalid or expired token' });
+        }
+        // For improve/refine, continue as anonymous
+        console.log('Invalid token provided, treating as anonymous user');
+        isAnonymous = true;
+      }
+    } else {
+      // No token provided - anonymous user
+      isAnonymous = true;
+    }
+
+    // Enforce Pro-only access for follow-up mode (requires authentication)
+    if (mode === 'followup') {
+      if (!authenticatedClient || !userId) {
+        return res.status(401).json({ error: 'Authentication required. Please log in.' });
+      }
       try {
         const isPro = await getUserProStatus({ authenticatedClient, userId });
         if (!isPro) {
@@ -351,47 +413,80 @@ async function handlePromptImprovement(req, res, mode) {
     };
     const creditCost = creditCosts[mode] || 1;
 
-    // Check user's credits before processing
-    let currentCredits;
-    try {
-      currentCredits = await getUserCredits({ authenticatedClient, userId });
-    } catch (creditError) {
-      console.error('Error checking credits:', creditError);
-      return res.status(500).json({ error: 'Failed to check credits' });
-    }
-
-    // Check if user has sufficient credits
-    if (currentCredits <= 0 || currentCredits < creditCost) {
-      return res.status(402).json({ 
-        error: 'No credits remaining',
-        creditsRemaining: currentCredits
-      });
-    }
-
-    // Deduct credits before processing (as per V1 requirements)
+    // Handle credits: authenticated users vs anonymous users
     let remainingCredits;
-    try {
-      console.log(`Attempting to deduct ${creditCost} credits for user ${userId} (mode: ${mode})`);
-      remainingCredits = await deductCredits({
-        authenticatedClient,
-        userId,
-        amount: creditCost,
-        accessToken: token
-      });
-      console.log(`Credits deducted successfully. Remaining: ${remainingCredits}`);
-    } catch (deductError) {
-      console.error('Error deducting credits:', deductError);
-      console.error('Error stack:', deductError.stack);
-      if (deductError.message === 'Insufficient credits') {
+    let currentCredits;
+
+    if (isAnonymous) {
+      // Anonymous user credit tracking (by IP)
+      const clientIP = getClientIP(req);
+      currentCredits = getAnonymousCredits(clientIP);
+      
+      // Check if anonymous user has sufficient credits
+      if (currentCredits < creditCost) {
+        return res.status(402).json({ 
+          error: 'No credits remaining. Sign up to get more credits.',
+          creditsRemaining: currentCredits
+        });
+      }
+
+      // Deduct anonymous credits
+      try {
+        remainingCredits = deductAnonymousCredits(clientIP, creditCost);
+        console.log(`Deducted ${creditCost} anonymous credits for IP ${clientIP}. Remaining: ${remainingCredits}`);
+      } catch (deductError) {
+        if (deductError.message === 'Insufficient credits') {
+          return res.status(402).json({ 
+            error: 'No credits remaining. Sign up to get more credits.',
+            creditsRemaining: currentCredits
+          });
+        }
+        return res.status(500).json({ 
+          error: 'Failed to process credits',
+          details: deductError.message
+        });
+      }
+    } else {
+      // Authenticated user credit tracking (from database)
+      try {
+        currentCredits = await getUserCredits({ authenticatedClient, userId });
+      } catch (creditError) {
+        console.error('Error checking credits:', creditError);
+        return res.status(500).json({ error: 'Failed to check credits' });
+      }
+
+      // Check if user has sufficient credits
+      if (currentCredits <= 0 || currentCredits < creditCost) {
         return res.status(402).json({ 
           error: 'No credits remaining',
           creditsRemaining: currentCredits
         });
       }
-      return res.status(500).json({ 
-        error: 'Failed to process credits',
-        details: deductError.message
-      });
+
+      // Deduct credits before processing (as per V1 requirements)
+      try {
+        console.log(`Attempting to deduct ${creditCost} credits for user ${userId} (mode: ${mode})`);
+        remainingCredits = await deductCredits({
+          authenticatedClient,
+          userId,
+          amount: creditCost,
+          accessToken: token
+        });
+        console.log(`Credits deducted successfully. Remaining: ${remainingCredits}`);
+      } catch (deductError) {
+        console.error('Error deducting credits:', deductError);
+        console.error('Error stack:', deductError.stack);
+        if (deductError.message === 'Insufficient credits') {
+          return res.status(402).json({ 
+            error: 'No credits remaining',
+            creditsRemaining: currentCredits
+          });
+        }
+        return res.status(500).json({ 
+          error: 'Failed to process credits',
+          details: deductError.message
+        });
+      }
     }
 
     // Check if OpenAI is configured
@@ -536,17 +631,19 @@ Return ONLY the rewritten follow-up prompt.`;
       return res.status(500).json({ error: `OpenAI API error: ${openaiError.message}` });
     }
 
-    // Save prompt to database
-    try {
-      await savePrompt({
-        authenticatedClient,
-        userId,
-        inputText: original_prompt.trim(),
-        outputText: improvedPrompt
-      });
-    } catch (saveError) {
-      console.error('Error saving prompt:', saveError);
-      // Continue even if save fails - credits are already deducted
+    // Save prompt to database (only for authenticated users)
+    if (!isAnonymous && authenticatedClient && userId) {
+      try {
+        await savePrompt({
+          authenticatedClient,
+          userId,
+          inputText: original_prompt.trim(),
+          outputText: improvedPrompt
+        });
+      } catch (saveError) {
+        console.error('Error saving prompt:', saveError);
+        // Continue even if save fails - credits are already deducted
+      }
     }
 
     // Return improved prompt and remaining credits

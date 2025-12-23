@@ -519,27 +519,21 @@ Rules:
 
 Return ONLY the improved prompt text.`;
 
-    const SYSTEM_PROMPT_REFINE_BUILD = `You are a professional prompt editor.
+    const SYSTEM_PROMPT_REFINE = `You are a prompt refinement assistant.
 
-Using the original user input and the selected answers, assemble a single, high-quality AI prompt.
+Take the user's prompt and produce a clearer, more specific, and higher-quality version.
 
-The final prompt must:
-- Clearly define the role or perspective
-- Specify the exact task to perform
-- Integrate ALL selected answers explicitly
-- Define the desired output format
-- Include key constraints or quality guidelines
-- State a clear success goal
+Rules:
+- Preserve the user's original intent and meaning
+- Make the prompt more precise and actionable
+- Add clarity where needed without changing the core purpose
+- Improve specificity and remove ambiguity
+- Keep the prompt concise and practical
+- Do NOT answer the prompt
+- Do NOT add explanations
+- Do NOT change the fundamental task or goal
 
-Critical rules:
-- Every selected answer must be reflected clearly in the final prompt.
-- Do NOT omit, summarize away, or ignore any selected input.
-- Do NOT repeat the questions themselves.
-- Focus on framing the task, not executing it.
-- Keep the prompt concise but complete.
-- Do NOT add explanations or commentary.
-
-Return ONLY the final prompt text.`;
+Return ONLY the refined prompt text.`;
 
     const SYSTEM_PROMPT_FOLLOWUP = `You are rewriting a follow-up prompt in an ongoing conversation.
 
@@ -567,18 +561,10 @@ Return ONLY the rewritten follow-up prompt.`;
       temperature = 0.35;
       maxTokens = 250;
     } else if (mode === 'refine') {
-      systemMessage = SYSTEM_PROMPT_REFINE_BUILD;
-      // For refine, we need to handle the context similar to extension
-      // The extension sends: original input + user answers
-      // Since we're receiving original_prompt and potentially previous_prompt,
-      // we'll treat previous_prompt as the answers/refinement context
-      if (previous_prompt && previous_prompt.trim()) {
-        userMessage = `Original input: "${original_prompt.trim()}"\n\nUser answers:\n${previous_prompt.trim()}`;
-      } else {
-        userMessage = `Original input: "${original_prompt.trim()}"\n\nUser answers:\nNo specific answers provided`;
-      }
-      temperature = 0.7;
-      maxTokens = 500;
+      systemMessage = SYSTEM_PROMPT_REFINE;
+      userMessage = original_prompt.trim();
+      temperature = 0.35;
+      maxTokens = 250;
     } else if (mode === 'followup') {
       systemMessage = SYSTEM_PROMPT_FOLLOWUP;
       // Build context from previous messages (matching extension logic)

@@ -298,53 +298,24 @@
             connectBtn.parentNode.replaceChild(newBtn, connectBtn);
             const btn = document.getElementById('connect-extension-btn');
 
-            btn.addEventListener('click', async () => {
+            btn.addEventListener('click', () => {
                 console.log('Connect Chrome Extension button clicked');
                 
-                // Disable button and show loading state
-                const originalText = btn.textContent;
-                btn.disabled = true;
-                btn.textContent = 'Connecting...';
-                btn.style.opacity = '0.6';
-                btn.style.cursor = 'not-allowed';
-
-                try {
-                    // Fetch user's existing auth token (same token used for API auth)
-                    const storedToken = localStorage.getItem('supabase_token');
-                    
-                    console.log('Token retrieved:', storedToken ? 'Token exists' : 'Token missing');
-                    
-                    if (!storedToken) {
-                        // If token is missing, show alert
-                        alert('Please login again');
-                        // Re-enable button
-                        btn.disabled = false;
-                        btn.textContent = originalText;
-                        btn.style.opacity = '1';
-                        btn.style.cursor = 'pointer';
-                        return;
+                // STEP 1: Immediately redirect to easyprompt://connect
+                // No loading spinner, no message waiting, no token needed
+                const protocolUrl = 'easyprompt://connect';
+                console.log('Redirect triggered to:', protocolUrl);
+                
+                // Attempt redirect (extension will handle the protocol)
+                window.location.href = protocolUrl;
+                
+                // STEP 1: Fallback timeout - if redirect doesn't happen within 1 second, show error
+                setTimeout(() => {
+                    // Check if we're still on the same page (redirect didn't happen)
+                    if (window.location.href.includes('easyprompt-backend-production.up.railway.app')) {
+                        alert('Chrome extension not detected. Please make sure the EasyPrompt extension is installed and enabled.');
                     }
-                    
-                    // Redirect to custom protocol URL: easyprompt://connect?token=USER_TOKEN
-                    const protocolUrl = `easyprompt://connect?token=${encodeURIComponent(storedToken)}`;
-                    console.log('Redirect triggered to:', protocolUrl);
-                    
-                    // Attempt redirect (extension will handle the protocol)
-                    window.location.href = protocolUrl;
-                    
-                    // Note: If protocol handler doesn't exist, browser may show error
-                    // Extension background script should handle this via webRequest or tabs API
-                    
-                } catch (error) {
-                    console.error('Error connecting extension:', error);
-                    alert('Failed to connect extension. Please try again.');
-                    
-                    // Re-enable button on error
-                    btn.disabled = false;
-                    btn.textContent = originalText;
-                    btn.style.opacity = '1';
-                    btn.style.cursor = 'pointer';
-                }
+                }, 1000);
             });
         }
 

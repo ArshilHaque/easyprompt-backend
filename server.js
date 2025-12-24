@@ -503,9 +503,20 @@ async function handlePromptImprovement(req, res, mode) {
       // Anonymous user credit tracking (by IP)
       const clientIP = getClientIP(req);
       currentCredits = getAnonymousCredits(clientIP);
+      console.log(`[${mode.toUpperCase()}] Anonymous user (IP: ${clientIP}) current credits: ${currentCredits}`);
       
-      // Check if anonymous user has sufficient credits
+      // Explicit check: If credits <= 0, return error and do NOT proceed
+      if (currentCredits <= 0) {
+        console.log(`[${mode.toUpperCase()}] Anonymous user (IP: ${clientIP}) has no credits remaining (${currentCredits}). Blocking request.`);
+        return res.status(402).json({ 
+          error: 'No credits remaining. Sign up to get more credits.',
+          creditsRemaining: currentCredits
+        });
+      }
+
+      // Check if anonymous user has sufficient credits for this operation
       if (currentCredits < creditCost) {
+        console.log(`[${mode.toUpperCase()}] Anonymous user (IP: ${clientIP}) has insufficient credits (${currentCredits} < ${creditCost}). Blocking request.`);
         return res.status(402).json({ 
           error: 'No credits remaining. Sign up to get more credits.',
           creditsRemaining: currentCredits
@@ -514,8 +525,9 @@ async function handlePromptImprovement(req, res, mode) {
 
       // Deduct anonymous credits
       try {
+        console.log(`[${mode.toUpperCase()}] Deducting ${creditCost} anonymous credit(s) for IP ${clientIP}`);
         remainingCredits = deductAnonymousCredits(clientIP, creditCost);
-        console.log(`Deducted ${creditCost} anonymous credits for IP ${clientIP}. Remaining: ${remainingCredits}`);
+        console.log(`[${mode.toUpperCase()}] Anonymous credits deducted successfully. IP ${clientIP} remaining credits: ${remainingCredits}`);
       } catch (deductError) {
         if (deductError.message === 'Insufficient credits') {
           return res.status(402).json({ 
@@ -530,34 +542,46 @@ async function handlePromptImprovement(req, res, mode) {
       }
     } else {
       // Authenticated user credit tracking (from database)
+      // Fetch user from Supabase to check credits
       try {
         currentCredits = await getUserCredits({ authenticatedClient, userId });
+        console.log(`[${mode.toUpperCase()}] User ${userId} current credits: ${currentCredits}`);
       } catch (creditError) {
-        console.error('Error checking credits:', creditError);
+        console.error(`[${mode.toUpperCase()}] Error checking credits for user ${userId}:`, creditError);
         return res.status(500).json({ error: 'Failed to check credits' });
       }
 
-      // Check if user has sufficient credits
-      if (currentCredits <= 0 || currentCredits < creditCost) {
+      // Explicit check: If credits <= 0, return error and do NOT proceed
+      if (currentCredits <= 0) {
+        console.log(`[${mode.toUpperCase()}] User ${userId} has no credits remaining (${currentCredits}). Blocking request.`);
         return res.status(402).json({ 
           error: 'No credits remaining',
           creditsRemaining: currentCredits
         });
       }
 
-      // Deduct credits before processing (as per V1 requirements)
+      // Check if user has sufficient credits for this operation
+      if (currentCredits < creditCost) {
+        console.log(`[${mode.toUpperCase()}] User ${userId} has insufficient credits (${currentCredits} < ${creditCost}). Blocking request.`);
+        return res.status(402).json({ 
+          error: 'No credits remaining',
+          creditsRemaining: currentCredits
+        });
+      }
+
+      // Deduct credits before processing (as per requirements)
       try {
-        console.log(`Attempting to deduct ${creditCost} credits for user ${userId} (mode: ${mode})`);
+        console.log(`[${mode.toUpperCase()}] Deducting ${creditCost} credit(s) for user ${userId} (mode: ${mode})`);
         remainingCredits = await deductCredits({
           authenticatedClient,
           userId,
           amount: creditCost,
           accessToken: token
         });
-        console.log(`Credits deducted successfully. Remaining: ${remainingCredits}`);
+        console.log(`[${mode.toUpperCase()}] Credits deducted successfully. User ${userId} remaining credits: ${remainingCredits}`);
       } catch (deductError) {
-        console.error('Error deducting credits:', deductError);
-        console.error('Error stack:', deductError.stack);
+        console.error(`[${mode.toUpperCase()}] Error deducting credits for user ${userId}:`, deductError);
+        console.error(`[${mode.toUpperCase()}] Error stack:`, deductError.stack);
         if (deductError.message === 'Insufficient credits') {
           return res.status(402).json({ 
             error: 'No credits remaining',

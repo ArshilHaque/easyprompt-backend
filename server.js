@@ -470,6 +470,7 @@ async function handlePromptImprovement(req, res, mode) {
     }
 
     // Enforce Pro-only access for follow-up mode (requires authentication)
+    // Improve and Refine are available to ALL authenticated users (Free or Pro)
     if (mode === 'followup') {
       if (!authenticatedClient || !userId) {
         return res.status(401).json({ error: 'Authentication required. Please log in.' });
@@ -485,6 +486,11 @@ async function handlePromptImprovement(req, res, mode) {
         console.error('Error checking Pro status:', proError);
         return res.status(500).json({ error: 'Failed to verify Pro status' });
       }
+    }
+    
+    // For Improve and Refine: Allow authenticated users (Free or Pro) - no plan check
+    if ((mode === 'improve' || mode === 'refine') && !isAnonymous) {
+      console.log(`[CREDITS] ${mode.toUpperCase()} allowed for authenticated user (Free or Pro)`);
     }
 
     // Determine credit cost based on mode
@@ -542,6 +548,7 @@ async function handlePromptImprovement(req, res, mode) {
       }
     } else {
       // Authenticated user credit tracking (from database)
+      // For Improve/Refine: Allow Free and Pro users - only check credits, not plan
       // Fetch user from Supabase to check credits
       try {
         currentCredits = await getUserCredits({ authenticatedClient, userId });
@@ -551,47 +558,92 @@ async function handlePromptImprovement(req, res, mode) {
         return res.status(500).json({ error: 'Failed to check credits' });
       }
 
-      // Explicit check: If credits <= 0, return error and do NOT proceed
-      if (currentCredits <= 0) {
-        console.log(`[${mode.toUpperCase()}] User ${userId} has no credits remaining (${currentCredits}). Blocking request.`);
-        return res.status(402).json({ 
-          error: 'No credits remaining',
-          creditsRemaining: currentCredits
-        });
-      }
-
-      // Check if user has sufficient credits for this operation
-      if (currentCredits < creditCost) {
-        console.log(`[${mode.toUpperCase()}] User ${userId} has insufficient credits (${currentCredits} < ${creditCost}). Blocking request.`);
-        return res.status(402).json({ 
-          error: 'No credits remaining',
-          creditsRemaining: currentCredits
-        });
-      }
-
-      // Deduct credits before processing (as per requirements)
-      try {
-        console.log(`[${mode.toUpperCase()}] Deducting ${creditCost} credit(s) for user ${userId} (mode: ${mode})`);
-        remainingCredits = await deductCredits({
-          authenticatedClient,
-          userId,
-          amount: creditCost,
-          accessToken: token
-        });
-        console.log(`[${mode.toUpperCase()}] Credits deducted successfully. User ${userId} remaining credits: ${remainingCredits}`);
-      } catch (deductError) {
-        console.error(`[${mode.toUpperCase()}] Error deducting credits for user ${userId}:`, deductError);
-        console.error(`[${mode.toUpperCase()}] Error stack:`, deductError.stack);
-        if (deductError.message === 'Insufficient credits') {
+      // For Improve/Refine: Only check credits, allow Free users
+      // For Follow-up: Already checked Pro status above
+      if (mode === 'improve' || mode === 'refine') {
+        // Explicit check: If credits <= 0, return error and do NOT proceed
+        if (currentCredits <= 0) {
+          console.log(`[${mode.toUpperCase()}] User ${userId} has no credits remaining (${currentCredits}). Blocking request.`);
           return res.status(402).json({ 
             error: 'No credits remaining',
             creditsRemaining: currentCredits
           });
         }
-        return res.status(500).json({ 
-          error: 'Failed to process credits',
-          details: deductError.message
-        });
+
+        // Check if user has sufficient credits for this operation
+        if (currentCredits < creditCost) {
+          console.log(`[${mode.toUpperCase()}] User ${userId} has insufficient credits (${currentCredits} < ${creditCost}). Blocking request.`);
+          return res.status(402).json({ 
+            error: 'No credits remaining',
+            creditsRemaining: currentCredits
+          });
+        }
+
+        // Deduct credits before processing (as per requirements)
+        try {
+          console.log(`[${mode.toUpperCase()}] Deducting ${creditCost} credit(s) for user ${userId} (mode: ${mode})`);
+          remainingCredits = await deductCredits({
+            authenticatedClient,
+            userId,
+            amount: creditCost,
+            accessToken: token
+          });
+          console.log(`[${mode.toUpperCase()}] Credits deducted successfully. User ${userId} remaining credits: ${remainingCredits}`);
+        } catch (deductError) {
+          console.error(`[${mode.toUpperCase()}] Error deducting credits for user ${userId}:`, deductError);
+          console.error(`[${mode.toUpperCase()}] Error stack:`, deductError.stack);
+          if (deductError.message === 'Insufficient credits') {
+            return res.status(402).json({ 
+              error: 'No credits remaining',
+              creditsRemaining: currentCredits
+            });
+          }
+          return res.status(500).json({ 
+            error: 'Failed to process credits',
+            details: deductError.message
+          });
+        }
+      } else if (mode === 'followup') {
+        // Follow-up: Already verified Pro status above, now check credits
+        if (currentCredits <= 0) {
+          console.log(`[${mode.toUpperCase()}] Pro user ${userId} has no credits remaining (${currentCredits}). Blocking request.`);
+          return res.status(402).json({ 
+            error: 'No credits remaining',
+            creditsRemaining: currentCredits
+          });
+        }
+
+        if (currentCredits < creditCost) {
+          console.log(`[${mode.toUpperCase()}] Pro user ${userId} has insufficient credits (${currentCredits} < ${creditCost}). Blocking request.`);
+          return res.status(402).json({ 
+            error: 'No credits remaining',
+            creditsRemaining: currentCredits
+          });
+        }
+
+        // Deduct credits for Follow-up
+        try {
+          console.log(`[${mode.toUpperCase()}] Deducting ${creditCost} credit(s) for Pro user ${userId}`);
+          remainingCredits = await deductCredits({
+            authenticatedClient,
+            userId,
+            amount: creditCost,
+            accessToken: token
+          });
+          console.log(`[${mode.toUpperCase()}] Credits deducted successfully. Pro user ${userId} remaining credits: ${remainingCredits}`);
+        } catch (deductError) {
+          console.error(`[${mode.toUpperCase()}] Error deducting credits for Pro user ${userId}:`, deductError);
+          if (deductError.message === 'Insufficient credits') {
+            return res.status(402).json({ 
+              error: 'No credits remaining',
+              creditsRemaining: currentCredits
+            });
+          }
+          return res.status(500).json({ 
+            error: 'Failed to process credits',
+            details: deductError.message
+          });
+        }
       }
     }
 

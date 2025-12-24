@@ -50,16 +50,15 @@ app.get('/app', (req, res) => {
 });
 
 // GET /extension-connect - Connect Chrome extension with Pro token
+// Clean flow: website owns auth, extension only consumes token
 app.get('/extension-connect', async (req, res) => {
   try {
     // Get token from Authorization header or query param
     const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token;
     
-    // If no token, user is not authenticated
+    // PART 2: If user is NOT logged in → redirect to /auth (login page)
     if (!token) {
-      return res.sendFile(join(__dirname, 'extension-connect.html'), {
-        // Pass message via query param since we can't use template engine
-      });
+      return res.redirect('/auth');
     }
 
     // Verify token and get authenticated user id
@@ -67,8 +66,8 @@ app.get('/extension-connect', async (req, res) => {
     try {
       user = await verifyUserFromToken(token);
     } catch (error) {
-      // Invalid token - show login message
-      return res.sendFile(join(__dirname, 'extension-connect.html'));
+      // Invalid token - redirect to login
+      return res.redirect('/auth');
     }
 
     const userId = user.userId;
@@ -92,23 +91,44 @@ app.get('/extension-connect', async (req, res) => {
       userId
     });
 
+    // PART 2: If user IS logged in but NOT Pro → redirect to /upgrade
     if (!isPro) {
-      // User is authenticated but not Pro
-      return res.sendFile(join(__dirname, 'extension-connect.html'));
+      return res.redirect('/upgrade');
     }
 
-    // User is Pro - send page with token in query string
-    // The token is the Supabase access token (same one used for API calls)
-    res.redirect(`/extension-connect.html?token=${encodeURIComponent(token)}`);
+    // PART 2: If user IS logged in AND Pro:
+    // Generate extension token (use Supabase token as extension token)
+    // Token includes user_id and plan, expiry handled by Supabase token itself
+    // For simplicity, we'll use the Supabase access token as the extension token
+    // It already contains user_id and has expiry built-in
+    
+    const extensionToken = token; // Use Supabase token directly (already has user_id, expiry)
+    
+    // Redirect to extension-connect page with token (extension will detect and extract)
+    // This is a special page that the extension monitors via tabs API
+    res.redirect(`/extension-connect-success?token=${encodeURIComponent(extensionToken)}`);
   } catch (error) {
     console.error('Error in /extension-connect:', error);
-    res.sendFile(join(__dirname, 'extension-connect.html'));
+    // On error, redirect to login
+    res.redirect('/auth');
   }
 });
 
-// Serve extension-connect.html directly (for redirect with token)
-app.get('/extension-connect.html', (req, res) => {
-  res.sendFile(join(__dirname, 'extension-connect.html'));
+// Removed: extension-connect.html is no longer needed
+// Custom protocol redirect handles everything
+
+// GET /upgrade - Upgrade page (redirects to app for now)
+app.get('/upgrade', (req, res) => {
+  // For now, redirect to app page
+  // In future, this could be a dedicated upgrade page
+  res.redirect('/app');
+});
+
+// GET /extension-connect-success - Success page that extension monitors
+app.get('/extension-connect-success', (req, res) => {
+  // This page is monitored by the extension via tabs API
+  // Extension will extract token from URL and save it
+  res.sendFile(join(__dirname, 'extension-connect-success.html'));
 });
 
 // POST /api/history/save

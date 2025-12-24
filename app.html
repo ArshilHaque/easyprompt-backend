@@ -203,6 +203,13 @@
 
         // Load user account info from backend
         async function loadAccountInfo(accessToken) {
+            // Ensure Authorization header is always attached
+            if (!accessToken) {
+                console.error('[AUTH] No access token provided to loadAccountInfo');
+                // Don't logout - token might be temporarily unavailable
+                return;
+            }
+
             try {
                 const response = await fetch(`${API_BASE_URL}/api/me`, {
                     method: 'GET',
@@ -212,21 +219,39 @@
                     }
                 });
 
-                if (!response.ok) {
-                    console.error('Failed to fetch user data:', response.status);
+                // ONLY logout on 401 (Unauthorized) - this means token is invalid/expired
+                if (response.status === 401) {
+                    console.log('[AUTH] Logging out due to 401 - token invalid or expired');
                     redirectToAuth();
                     return;
                 }
 
-                const userData = await response.json();
+                // For other errors (403, 500, network issues, etc.), preserve token and show error
+                if (!response.ok) {
+                    console.error('[AUTH] /api/me failed with status:', response.status, 'but token preserved');
+                    // Don't logout - keep user logged in, token is still valid
+                    // Log error but don't show UI error (user can refresh if needed)
+                    return;
+                }
+
+                // Parse response JSON
+                let userData;
+                try {
+                    userData = await response.json();
+                } catch (jsonError) {
+                    console.error('[AUTH] /api/me failed to parse JSON but token preserved:', jsonError);
+                    // Don't logout - JSON parse error doesn't mean token is invalid
+                    return;
+                }
 
                 // Validate response has required fields
                 if (!userData || typeof userData.email === 'undefined' || typeof userData.plan === 'undefined' || typeof userData.credits === 'undefined') {
-                    console.error('Invalid response from /api/me');
-                    redirectToAuth();
+                    console.error('[AUTH] /api/me returned invalid response structure but token preserved');
+                    // Don't logout - invalid response structure doesn't mean token is invalid
                     return;
                 }
 
+                // Success - display user data
                 // Display email
                 document.getElementById('userEmail').textContent = userData.email;
                 document.getElementById('userEmail').classList.remove('loading');
@@ -248,8 +273,10 @@
                 // (Pro check happens on backend)
 
             } catch (error) {
-                console.error('Error loading account info:', error);
-                redirectToAuth();
+                // Network errors, fetch failures, etc. - preserve token
+                console.error('[AUTH] /api/me failed but token preserved:', error);
+                // Don't logout - network errors don't mean token is invalid
+                // User stays logged in, can retry later
             }
         }
 
@@ -288,22 +315,31 @@
                     return;
                 }
 
-                // Restore Supabase session using the token
-                const { data, error } = await supabaseClient.auth.getUser(storedToken);
-
-                if (error || !data || !data.user) {
-                    console.error('[AUTH] Invalid or expired token:', error);
-                    redirectToAuth();
-                    return;
+                // Optional: Verify token with Supabase (non-blocking)
+                // If this fails, we'll still try /api/me which is the source of truth
+                try {
+                    const { data, error } = await supabaseClient.auth.getUser(storedToken);
+                    if (error || !data || !data.user) {
+                        console.warn('[AUTH] Supabase token validation failed, but will try /api/me anyway:', error?.message);
+                        // Don't logout - /api/me is the source of truth
+                    } else {
+                        console.log('[AUTH] Token validated with Supabase');
+                    }
+                } catch (supabaseError) {
+                    console.warn('[AUTH] Supabase validation error (non-blocking):', supabaseError);
+                    // Continue to /api/me anyway
                 }
 
-                console.log('[AUTH] Token valid, loading account info');
-                // Token is valid, fetch user info from backend
+                console.log('[AUTH] Loading account info from backend');
+                // Always try /api/me - it's the source of truth for authentication
+                // /api/me will handle 401 and logout if needed
                 await loadAccountInfo(storedToken);
 
             } catch (error) {
-                console.error('[AUTH] Authentication check failed:', error);
-                redirectToAuth();
+                // Only logout if we have no token at all
+                // Network errors, etc. should not cause logout
+                console.error('[AUTH] Authentication check error (non-fatal):', error);
+                // Don't logout - preserve token, user can retry
             }
         }
 

@@ -342,8 +342,8 @@
             // Hardcoded extension ID for EasyPrompt Chrome extension
             const EXTENSION_ID = 'gbidkjanopokiaehoopnledbjbhpdbfl';
 
-            btn.addEventListener('click', () => {
-                console.log('Connect Chrome Extension button clicked');
+            btn.addEventListener('click', async () => {
+                console.log('[AUTH] Connect Chrome Extension button clicked');
                 
                 // Disable button and show loading state
                 const originalText = btn.textContent;
@@ -352,33 +352,32 @@
                 btn.style.opacity = '0.6';
                 btn.style.cursor = 'not-allowed';
 
-                // Get user's plan and token to determine if we should send proToken
+                // Get user's auth token (MANDATORY for authentication)
                 const storedToken = localStorage.getItem('supabase_token');
-                let proToken = null;
                 
-                // If user is Pro and has token, include proToken in message
-                if (currentUserPlan === 'Pro' && storedToken) {
-                    proToken = storedToken;
-                    console.log('Dashboard: User is Pro, including proToken in connection message');
-                } else {
-                    console.log('Dashboard: User is Free or no token, connecting without proToken');
+                if (!storedToken) {
+                    console.error('[AUTH] No auth token available. User must be logged in.');
+                    alert('Please log in first before connecting the extension.');
+                    btn.disabled = false;
+                    btn.textContent = originalText;
+                    btn.style.opacity = '1';
+                    btn.style.cursor = 'pointer';
+                    return;
                 }
+
+                console.log('[AUTH] Dashboard: Sending auth token to extension');
                 
-                // Send message to extension using chrome.runtime.sendMessage
-                const connectMessage = {
-                    type: 'EASYPROMPT_CONNECT',
-                    proToken: proToken
+                // STEP 1: Send auth token to extension (MANDATORY)
+                const setTokenMessage = {
+                    action: 'EASYPROMPT_SET_TOKEN',
+                    token: storedToken
                 };
-                console.log('Dashboard: Sending EASYPROMPT_CONNECT message to extension:', EXTENSION_ID);
-                console.log('Dashboard: Message includes proToken:', !!proToken);
                 
-                chrome.runtime.sendMessage(EXTENSION_ID, connectMessage, (response) => {
+                chrome.runtime.sendMessage(EXTENSION_ID, setTokenMessage, async (tokenResponse) => {
                     // Handle chrome.runtime.lastError (extension not installed)
                     if (chrome.runtime.lastError) {
-                        console.error('Dashboard: Extension not detected:', chrome.runtime.lastError.message);
+                        console.error('[AUTH] Extension not detected:', chrome.runtime.lastError.message);
                         alert('Extension not installed. Please make sure the EasyPrompt extension is installed and enabled.');
-                        
-                        // Re-enable button
                         btn.disabled = false;
                         btn.textContent = originalText;
                         btn.style.opacity = '1';
@@ -386,25 +385,57 @@
                         return;
                     }
                     
-                    // Check response
-                    if (response && response.success === true) {
-                        console.log('Dashboard: Extension connected successfully');
-                        // Mark extension as connected and stop loading state
-                        btn.disabled = false;
-                        btn.textContent = '✓ Connected';
-                        btn.style.opacity = '1';
-                        btn.style.cursor = 'pointer';
-                        btn.style.background = '#10b981'; // Green for success
-                    } else {
-                        console.error('Dashboard: Connection failed:', response);
-                        alert('Failed to connect extension. Please try again.');
-                        
-                        // Re-enable button
+                    // Check if token was saved successfully
+                    if (!tokenResponse || !tokenResponse.success) {
+                        console.error('[AUTH] Failed to save auth token:', tokenResponse);
+                        alert('Failed to authenticate extension. Please try again.');
                         btn.disabled = false;
                         btn.textContent = originalText;
                         btn.style.opacity = '1';
                         btn.style.cursor = 'pointer';
+                        return;
                     }
+                    
+                    console.log('[AUTH] Auth token saved successfully');
+                    
+                    // STEP 2: If user is Pro, also send proToken for Follow-up access
+                    let proToken = null;
+                    if (currentUserPlan === 'Pro') {
+                        proToken = storedToken;
+                        console.log('[AUTH] User is Pro, sending proToken for Follow-up access');
+                    }
+                    
+                    // Send connection message with proToken (if Pro)
+                    const connectMessage = {
+                        type: 'EASYPROMPT_CONNECT',
+                        proToken: proToken
+                    };
+                    
+                    chrome.runtime.sendMessage(EXTENSION_ID, connectMessage, (connectResponse) => {
+                        if (chrome.runtime.lastError) {
+                            console.error('[AUTH] Error sending connection message:', chrome.runtime.lastError);
+                            // Token is already saved, so mark as connected anyway
+                        }
+                        
+                        // Check response
+                        if (connectResponse && connectResponse.success === true) {
+                            console.log('[AUTH] Extension connected and authenticated successfully');
+                            // Mark extension as connected
+                            btn.disabled = false;
+                            btn.textContent = '✓ Connected';
+                            btn.style.opacity = '1';
+                            btn.style.cursor = 'pointer';
+                            btn.style.background = '#10b981'; // Green for success
+                        } else {
+                            // Token was saved, so connection is successful even if connect message fails
+                            console.log('[AUTH] Extension authenticated (connection message may have failed)');
+                            btn.disabled = false;
+                            btn.textContent = '✓ Connected';
+                            btn.style.opacity = '1';
+                            btn.style.cursor = 'pointer';
+                            btn.style.background = '#10b981';
+                        }
+                    });
                 });
             });
         }

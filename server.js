@@ -5,7 +5,8 @@ import dotenv from 'dotenv';
 import OpenAI from 'openai';
 import { verifyUserFromToken } from './authHelpers.js';
 import { savePromptHistory, savePrompt } from './historyHelpers.js';
-import { getUserProStatus, getUserCredits, deductCredits } from './userHelpers.js';
+import { getUserProStatus, getUserCredits, deductCredits, getUserCreditInfo, resetDailyCreditsIfNeeded, deductFreeUserCredits, grantSignupBonus, ensureUserExists } from './userHelpers.js';
+import { supabase } from './supabaseClient.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -47,6 +48,10 @@ app.get('/auth', (req, res) => {
 
 app.get('/app', (req, res) => {
   res.sendFile(join(__dirname, 'app.html'));
+});
+
+app.get('/reset-password', (req, res) => {
+  res.sendFile(join(__dirname, 'reset-password.html'));
 });
 
 // GET /extension-connect - Connect Chrome extension with Pro token
@@ -266,7 +271,7 @@ app.get('/api/me', async (req, res) => {
     // Query users table for user data
     const { data: userData, error } = await authenticatedClient
       .from('users')
-      .select('email, is_pro, credits')
+      .select('email, is_pro, credits, signup_bonus_given')
       .eq('id', userId)
       .single();
 
@@ -280,6 +285,30 @@ app.get('/api/me', async (req, res) => {
         });
       }
       throw new Error(`Failed to get user data: ${error.message}`);
+    }
+
+    // Grant signup bonus if user exists but hasn't received it yet
+    if (userData && !userData.signup_bonus_given) {
+      try {
+        await grantSignupBonus({ authenticatedClient, userId });
+        // Refresh user data to get updated credits
+        const { data: updatedUserData } = await authenticatedClient
+          .from('users')
+          .select('email, is_pro, credits')
+          .eq('id', userId)
+          .single();
+        
+        if (updatedUserData) {
+          return res.json({
+            email: updatedUserData.email || user.email,
+            plan: updatedUserData.is_pro === true ? 'Pro' : 'Free',
+            credits: updatedUserData.credits ?? 0
+          });
+        }
+      } catch (bonusError) {
+        console.error('Error granting signup bonus:', bonusError);
+        // Continue with existing user data even if bonus grant fails
+      }
     }
 
     // Return formatted response
@@ -297,6 +326,153 @@ app.get('/api/me', async (req, res) => {
     // Other errors
     console.error('Error getting user data:', error);
     return res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/auth/signup - Sign up new user
+app.post('/api/auth/signup', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Validate required fields
+    if (!email || !email.trim()) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    if (!password || password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    // Sign up with Supabase Auth
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim().toLowerCase(),
+      password: password
+    });
+
+    if (error) {
+      // Handle specific Supabase errors
+      if (error.message.includes('already registered') || error.message.includes('already exists')) {
+        return res.status(400).json({ error: 'Email already exists. Please log in instead.' });
+      }
+      if (error.message.includes('Password')) {
+        return res.status(400).json({ error: 'Password is too weak. Please use a stronger password.' });
+      }
+      if (error.message.includes('email')) {
+        return res.status(400).json({ error: 'Invalid email address' });
+      }
+      return res.status(400).json({ error: error.message || 'Sign up failed' });
+    }
+
+    if (!data || !data.user) {
+      return res.status(500).json({ error: 'Sign up failed: No user data received' });
+    }
+
+    // Ensure user row exists in users table
+    // Signup bonus will be granted on first /api/me call
+    try {
+      await ensureUserExists({
+        id: data.user.id,
+        email: data.user.email
+      });
+      console.log(`[AUTH] User ${data.user.id} created in users table`);
+    } catch (userError) {
+      console.error('[AUTH] Error ensuring user exists:', userError);
+      // Continue even if user creation fails - user can still log in
+    }
+
+    // Return success (don't return session - user needs to confirm email first)
+    return res.json({ 
+      success: true,
+      message: 'Account created successfully. Please check your email to confirm your account.'
+    });
+  } catch (error) {
+    console.error('Error in /api/auth/signup:', error);
+    return res.status(500).json({ error: 'An unexpected error occurred' });
+  }
+});
+
+// POST /api/auth/forgot-password - Send password reset email
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    // Validate required fields
+    if (!email || !email.trim()) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    // Send password reset email via Supabase
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      redirectTo: 'https://easyprompt-backend-production.up.railway.app/reset-password'
+    });
+
+    // Always return success to avoid leaking account existence
+    // Supabase will only send email if account exists
+    return res.json({ 
+      success: true,
+      message: 'If this email exists, we\'ve sent a reset link.'
+    });
+  } catch (error) {
+    console.error('Error in /api/auth/forgot-password:', error);
+    // Still return success to avoid leaking errors
+    return res.json({ 
+      success: true,
+      message: 'If this email exists, we\'ve sent a reset link.'
+    });
+  }
+});
+
+// POST /api/auth/reset-password - Reset password with token
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { access_token, new_password } = req.body;
+
+    // Validate required fields
+    if (!access_token) {
+      return res.status(400).json({ error: 'Reset token is required' });
+    }
+
+    if (!new_password || new_password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    // Verify token first using Supabase
+    const { data: { user }, error: verifyError } = await supabase.auth.getUser(access_token);
+    
+    if (verifyError || !user) {
+      return res.status(401).json({ error: 'Invalid or expired reset token' });
+    }
+
+    // Create a Supabase client with the user's access token for authenticated operations
+    const userClient = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_ANON_KEY,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${access_token}`
+          }
+        }
+      }
+    );
+
+    // Update password using the authenticated client
+    const { error: updateError } = await userClient.auth.updateUser({
+      password: new_password
+    });
+
+    if (updateError) {
+      console.error('Error updating password:', updateError);
+      return res.status(400).json({ error: updateError.message || 'Failed to reset password' });
+    }
+
+    return res.json({ 
+      success: true,
+      message: 'Password reset successfully. You can now log in with your new password.'
+    });
+  } catch (error) {
+    console.error('Error in /api/auth/reset-password:', error);
+    return res.status(500).json({ error: 'An unexpected error occurred' });
   }
 });
 
@@ -548,101 +724,82 @@ async function handlePromptImprovement(req, res, mode) {
       }
     } else {
       // Authenticated user credit tracking (from database)
-      // For Improve/Refine: Allow Free and Pro users - only check credits, not plan
-      // Fetch user from Supabase to check credits
+      // Check if user is Pro first - Pro users have unlimited usage
+      let isPro = false;
       try {
-        currentCredits = await getUserCredits({ authenticatedClient, userId });
-        console.log(`[${mode.toUpperCase()}] User ${userId} current credits: ${currentCredits}`);
-      } catch (creditError) {
-        console.error(`[${mode.toUpperCase()}] Error checking credits for user ${userId}:`, creditError);
-        return res.status(500).json({ error: 'Failed to check credits' });
+        isPro = await getUserProStatus({ authenticatedClient, userId });
+      } catch (proError) {
+        console.error(`[${mode.toUpperCase()}] Error checking Pro status for user ${userId}:`, proError);
+        // Continue with credit check if Pro check fails
       }
 
-      // For Improve/Refine: Only check credits, allow Free users
-      // For Follow-up: Already checked Pro status above
-      if (mode === 'improve' || mode === 'refine') {
-        // Explicit check: If credits <= 0, return error and do NOT proceed
-        if (currentCredits <= 0) {
-          console.log(`[${mode.toUpperCase()}] User ${userId} has no credits remaining (${currentCredits}). Blocking request.`);
-          return res.status(402).json({ 
-            error: 'No credits remaining',
-            creditsRemaining: currentCredits
-          });
-        }
+      // Pro users: Skip all credit checks
+      if (isPro) {
+        console.log(`[${mode.toUpperCase()}] Pro user ${userId} - unlimited usage, skipping credit checks`);
+        // Set remainingCredits to a placeholder value (not used for Pro)
+        remainingCredits = -1; // Indicates unlimited
+      } else {
+        // Free users: Implement daily credits (3/day) + signup bonus (10 one-time)
+        // For Improve/Refine: Use new credit system
+        // For Follow-up: Should not reach here (already checked Pro above)
+        if (mode === 'improve' || mode === 'refine') {
+          try {
+            // Reset daily credits if 24 hours have passed
+            const wasReset = await resetDailyCreditsIfNeeded({ authenticatedClient, userId });
+            if (wasReset) {
+              console.log(`[${mode.toUpperCase()}] Daily credits reset for user ${userId}`);
+            }
 
-        // Check if user has sufficient credits for this operation
-        if (currentCredits < creditCost) {
-          console.log(`[${mode.toUpperCase()}] User ${userId} has insufficient credits (${currentCredits} < ${creditCost}). Blocking request.`);
-          return res.status(402).json({ 
-            error: 'No credits remaining',
-            creditsRemaining: currentCredits
-          });
-        }
+            // Get credit info
+            const creditInfo = await getUserCreditInfo({ authenticatedClient, userId });
+            const DAILY_CREDITS = 3;
+            const dailyCreditsAvailable = DAILY_CREDITS - creditInfo.dailyCreditsUsed;
+            const bonusCredits = creditInfo.credits;
+            const totalAvailable = dailyCreditsAvailable + bonusCredits;
 
-        // Deduct credits before processing (as per requirements)
-        try {
-          console.log(`[${mode.toUpperCase()}] Deducting ${creditCost} credit(s) for user ${userId} (mode: ${mode})`);
-          remainingCredits = await deductCredits({
-            authenticatedClient,
-            userId,
-            amount: creditCost,
-            accessToken: token
-          });
-          console.log(`[${mode.toUpperCase()}] Credits deducted successfully. User ${userId} remaining credits: ${remainingCredits}`);
-        } catch (deductError) {
-          console.error(`[${mode.toUpperCase()}] Error deducting credits for user ${userId}:`, deductError);
-          console.error(`[${mode.toUpperCase()}] Error stack:`, deductError.stack);
-          if (deductError.message === 'Insufficient credits') {
-            return res.status(402).json({ 
-              error: 'No credits remaining',
-              creditsRemaining: currentCredits
-            });
+            console.log(`[${mode.toUpperCase()}] Free user ${userId} credits - Daily: ${dailyCreditsAvailable}/${DAILY_CREDITS}, Bonus: ${bonusCredits}, Total: ${totalAvailable}`);
+
+            // Check if user has enough credits
+            if (totalAvailable < creditCost) {
+              console.log(`[${mode.toUpperCase()}] Free user ${userId} has insufficient credits (${totalAvailable} < ${creditCost}). Blocking request.`);
+              return res.status(402).json({ 
+                error: 'No credits remaining. You\'ve used your 3 daily credits. Sign up to get 10 bonus credits or go Pro for unlimited access.',
+                creditsRemaining: totalAvailable
+              });
+            }
+
+            // Deduct credits (daily first, then bonus)
+            try {
+              const result = await deductFreeUserCredits({
+                authenticatedClient,
+                userId,
+                amount: creditCost,
+                accessToken: token
+              });
+              remainingCredits = result.remainingCredits;
+              console.log(`[${mode.toUpperCase()}] Credits deducted for Free user ${userId}. Remaining bonus: ${remainingCredits}, Daily remaining: ${result.dailyCreditsRemaining}, Source: ${result.creditSource}`);
+            } catch (deductError) {
+              console.error(`[${mode.toUpperCase()}] Error deducting credits for Free user ${userId}:`, deductError);
+              if (deductError.message === 'Insufficient credits') {
+                return res.status(402).json({ 
+                  error: 'No credits remaining. You\'ve used your 3 daily credits. Sign up to get 10 bonus credits or go Pro for unlimited access.',
+                  creditsRemaining: totalAvailable
+                });
+              }
+              return res.status(500).json({ 
+                error: 'Failed to process credits',
+                details: deductError.message
+              });
+            }
+          } catch (creditError) {
+            console.error(`[${mode.toUpperCase()}] Error processing credits for Free user ${userId}:`, creditError);
+            return res.status(500).json({ error: 'Failed to check credits' });
           }
-          return res.status(500).json({ 
-            error: 'Failed to process credits',
-            details: deductError.message
-          });
-        }
-      } else if (mode === 'followup') {
-        // Follow-up: Already verified Pro status above, now check credits
-        if (currentCredits <= 0) {
-          console.log(`[${mode.toUpperCase()}] Pro user ${userId} has no credits remaining (${currentCredits}). Blocking request.`);
-          return res.status(402).json({ 
-            error: 'No credits remaining',
-            creditsRemaining: currentCredits
-          });
-        }
-
-        if (currentCredits < creditCost) {
-          console.log(`[${mode.toUpperCase()}] Pro user ${userId} has insufficient credits (${currentCredits} < ${creditCost}). Blocking request.`);
-          return res.status(402).json({ 
-            error: 'No credits remaining',
-            creditsRemaining: currentCredits
-          });
-        }
-
-        // Deduct credits for Follow-up
-        try {
-          console.log(`[${mode.toUpperCase()}] Deducting ${creditCost} credit(s) for Pro user ${userId}`);
-          remainingCredits = await deductCredits({
-            authenticatedClient,
-            userId,
-            amount: creditCost,
-            accessToken: token
-          });
-          console.log(`[${mode.toUpperCase()}] Credits deducted successfully. Pro user ${userId} remaining credits: ${remainingCredits}`);
-        } catch (deductError) {
-          console.error(`[${mode.toUpperCase()}] Error deducting credits for Pro user ${userId}:`, deductError);
-          if (deductError.message === 'Insufficient credits') {
-            return res.status(402).json({ 
-              error: 'No credits remaining',
-              creditsRemaining: currentCredits
-            });
-          }
-          return res.status(500).json({ 
-            error: 'Failed to process credits',
-            details: deductError.message
-          });
+        } else if (mode === 'followup') {
+          // Follow-up: Should not reach here (already checked Pro above)
+          // But if it does, Pro users have unlimited, so this is a safety check
+          console.log(`[${mode.toUpperCase()}] Follow-up for user ${userId} - Pro check already passed, unlimited usage`);
+          remainingCredits = -1; // Indicates unlimited
         }
       }
     }

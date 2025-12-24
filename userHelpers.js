@@ -52,14 +52,21 @@ export async function ensureUserExists(user) {
     return;
   }
 
-  // If user doesn't exist, create them
+  // If user doesn't exist, create them with initial values
   // Note: This will fail if RLS prevents inserts, which is expected
+  const now = new Date();
+  const nextReset = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours from now
+  
   const { error: insertError } = await supabase
     .from('users')
     .insert({
       id: user.id,
       email: user.email,
-      plan: 'free'
+      plan: 'free',
+      credits: 0, // Signup bonus will be granted on first login via /api/me
+      daily_credits_used: 0,
+      daily_reset_at: nextReset.toISOString(),
+      signup_bonus_given: false
     });
 
   if (insertError) {
@@ -215,5 +222,226 @@ export async function deductCredits({ authenticatedClient, userId, amount, acces
 
   console.log(`Credits successfully deducted. Remaining: ${data.credits}`);
   return data.credits ?? 0;
+}
+
+/**
+ * Gets user's credit information including daily credits and signup bonus
+ * @param {Object} params - Parameters object
+ * @param {Object} params.authenticatedClient - Authenticated Supabase client
+ * @param {string} params.userId - The user's ID
+ * @returns {Promise<Object>} Credit information object
+ */
+export async function getUserCreditInfo({ authenticatedClient, userId }) {
+  if (!authenticatedClient) {
+    throw new Error('Authenticated Supabase client is required');
+  }
+
+  if (!userId) {
+    throw new Error('User ID is required');
+  }
+
+  const { data, error } = await authenticatedClient
+    .from('users')
+    .select('credits, daily_credits_used, daily_reset_at, signup_bonus_given')
+    .eq('id', userId)
+    .single();
+
+  if (error) {
+    if (error.code === 'PGRST116') {
+      // User doesn't exist, return defaults
+      return {
+        credits: 0,
+        dailyCreditsUsed: 0,
+        dailyResetAt: null,
+        signupBonusGiven: false
+      };
+    }
+    throw new Error(`Failed to get user credit info: ${error.message}`);
+  }
+
+  return {
+    credits: data?.credits ?? 0,
+    dailyCreditsUsed: data?.daily_credits_used ?? 0,
+    dailyResetAt: data?.daily_reset_at ? new Date(data.daily_reset_at) : null,
+    signupBonusGiven: data?.signup_bonus_given ?? false
+  };
+}
+
+/**
+ * Resets daily credits if 24 hours have passed
+ * @param {Object} params - Parameters object
+ * @param {Object} params.authenticatedClient - Authenticated Supabase client
+ * @param {string} params.userId - The user's ID
+ * @returns {Promise<boolean>} True if reset occurred, false otherwise
+ */
+export async function resetDailyCreditsIfNeeded({ authenticatedClient, userId }) {
+  if (!authenticatedClient) {
+    throw new Error('Authenticated Supabase client is required');
+  }
+
+  if (!userId) {
+    throw new Error('User ID is required');
+  }
+
+  const creditInfo = await getUserCreditInfo({ authenticatedClient, userId });
+  const now = new Date();
+  const resetAt = creditInfo.dailyResetAt ? new Date(creditInfo.dailyResetAt) : null;
+
+  // If daily_reset_at is missing OR 24 hours have passed, reset daily credits
+  if (!resetAt || now >= resetAt) {
+    const nextReset = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours from now
+    
+    const { error } = await authenticatedClient
+      .from('users')
+      .update({
+        daily_credits_used: 0,
+        daily_reset_at: nextReset.toISOString()
+      })
+      .eq('id', userId);
+
+    if (error) {
+      throw new Error(`Failed to reset daily credits: ${error.message}`);
+    }
+
+    console.log(`[CREDITS] Daily credits reset for user ${userId}. Next reset: ${nextReset.toISOString()}`);
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Deducts credits for Free users (daily credits first, then bonus credits)
+ * @param {Object} params - Parameters object
+ * @param {Object} params.authenticatedClient - Authenticated Supabase client
+ * @param {string} params.userId - The user's ID
+ * @param {number} params.amount - Amount to deduct
+ * @param {string} params.accessToken - Access token for session
+ * @returns {Promise<Object>} Result with remaining credits and source used
+ */
+export async function deductFreeUserCredits({ authenticatedClient, userId, amount, accessToken }) {
+  if (!authenticatedClient) {
+    throw new Error('Authenticated Supabase client is required');
+  }
+
+  if (!userId) {
+    throw new Error('User ID is required');
+  }
+
+  if (!amount || amount <= 0) {
+    throw new Error('Deduction amount must be positive');
+  }
+
+  // Set session explicitly
+  if (accessToken) {
+    try {
+      await authenticatedClient.auth.setSession({
+        access_token: accessToken,
+        refresh_token: ''
+      });
+    } catch (sessionError) {
+      console.warn('Could not set session (may already be set):', sessionError.message);
+    }
+  }
+
+  // Reset daily credits if needed
+  await resetDailyCreditsIfNeeded({ authenticatedClient, userId });
+
+  // Get current credit info
+  const creditInfo = await getUserCreditInfo({ authenticatedClient, userId });
+  const DAILY_CREDITS = 3;
+  const dailyCreditsAvailable = DAILY_CREDITS - creditInfo.dailyCreditsUsed;
+  const bonusCredits = creditInfo.credits; // Bonus credits stored in credits field
+
+  // Check if user has enough credits
+  const totalAvailable = dailyCreditsAvailable + bonusCredits;
+  if (totalAvailable < amount) {
+    throw new Error('Insufficient credits');
+  }
+
+  // Deduct from daily credits first, then from bonus credits
+  let newDailyCreditsUsed = creditInfo.dailyCreditsUsed;
+  let newBonusCredits = bonusCredits;
+  let creditSource = '';
+
+  if (dailyCreditsAvailable >= amount) {
+    // Use daily credits only
+    newDailyCreditsUsed = creditInfo.dailyCreditsUsed + amount;
+    creditSource = 'daily';
+    console.log(`[CREDITS] Deducted ${amount} from daily credits for user ${userId}. Source: daily`);
+  } else {
+    // Use all available daily credits + some bonus credits
+    const bonusNeeded = amount - dailyCreditsAvailable;
+    newDailyCreditsUsed = DAILY_CREDITS; // All daily credits used
+    newBonusCredits = bonusCredits - bonusNeeded;
+    creditSource = 'mixed';
+    console.log(`[CREDITS] Deducted ${dailyCreditsAvailable} from daily + ${bonusNeeded} from bonus for user ${userId}. Source: mixed`);
+  }
+
+  // Update database
+  const { data, error } = await authenticatedClient
+    .from('users')
+    .update({
+      daily_credits_used: newDailyCreditsUsed,
+      credits: newBonusCredits
+    })
+    .eq('id', userId)
+    .select('credits, daily_credits_used')
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to deduct credits: ${error.message}`);
+  }
+
+  const remainingCredits = newBonusCredits;
+  console.log(`[CREDITS] Credits deducted successfully. User ${userId} remaining: ${remainingCredits} bonus credits, ${DAILY_CREDITS - newDailyCreditsUsed} daily credits. Source: ${creditSource}`);
+
+  return {
+    remainingCredits,
+    dailyCreditsRemaining: DAILY_CREDITS - newDailyCreditsUsed,
+    creditSource
+  };
+}
+
+/**
+ * Grants signup bonus to a user (10 credits, one-time only)
+ * @param {Object} params - Parameters object
+ * @param {Object} params.authenticatedClient - Authenticated Supabase client
+ * @param {string} params.userId - The user's ID
+ * @returns {Promise<void>}
+ */
+export async function grantSignupBonus({ authenticatedClient, userId }) {
+  if (!authenticatedClient) {
+    throw new Error('Authenticated Supabase client is required');
+  }
+
+  if (!userId) {
+    throw new Error('User ID is required');
+  }
+
+  const creditInfo = await getUserCreditInfo({ authenticatedClient, userId });
+
+  // Only grant if not already given
+  if (creditInfo.signupBonusGiven) {
+    console.log(`[CREDITS] Signup bonus already granted to user ${userId}`);
+    return;
+  }
+
+  const SIGNUP_BONUS = 10;
+  const newCredits = creditInfo.credits + SIGNUP_BONUS;
+
+  const { error } = await authenticatedClient
+    .from('users')
+    .update({
+      credits: newCredits,
+      signup_bonus_given: true
+    })
+    .eq('id', userId);
+
+  if (error) {
+    throw new Error(`Failed to grant signup bonus: ${error.message}`);
+  }
+
+  console.log(`[CREDITS] Signup bonus granted: +${SIGNUP_BONUS} credits to user ${userId}. Total: ${newCredits}`);
 }
 

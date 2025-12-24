@@ -135,21 +135,69 @@
             <p>Write better prompts. Faster.</p>
         </div>
 
-        <form id="auth-form">
-            <div class="form-group">
-                <label for="email">Email</label>
-                <input type="email" id="email" placeholder="Enter your email" required>
+        <div id="login-view">
+            <form id="auth-form">
+                <div class="form-group">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" placeholder="Enter your email" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" placeholder="Enter your password" required>
+                </div>
+
+                <button type="submit" id="login-btn" class="primary-btn">Login</button>
+            </form>
+
+            <div style="text-align: center; margin-top: 16px;">
+                <a href="#" id="forgot-password-link" style="color: #6366f1; text-decoration: none; font-size: 14px;">Forgot password?</a>
             </div>
 
-            <div class="form-group">
-                <label for="password">Password</label>
-                <input type="password" id="password" placeholder="Enter your password" required>
+            <div style="text-align: center; margin-top: 24px; padding-top: 24px; border-top: 1px solid #e0e0e0;">
+                <p style="font-size: 14px; color: #666; margin-bottom: 16px;">Don't have an account?</p>
+                <button type="button" id="show-signup-btn" style="background: none; border: 2px solid #6366f1; color: #6366f1; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 500; width: 100%;">Sign Up</button>
             </div>
+        </div>
 
-            <button type="submit" id="login-btn" class="primary-btn">Login</button>
-        </form>
+        <div id="signup-view" style="display: none;">
+            <form id="signup-form">
+                <div class="form-group">
+                    <label for="signup-email">Email</label>
+                    <input type="email" id="signup-email" placeholder="Enter your email" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="signup-password">Password</label>
+                    <input type="password" id="signup-password" placeholder="Create a password (min 6 characters)" required minlength="6">
+                </div>
+
+                <button type="submit" id="signup-btn" class="primary-btn">Sign Up</button>
+            </form>
+
+            <div style="text-align: center; margin-top: 24px; padding-top: 24px; border-top: 1px solid #e0e0e0;">
+                <p style="font-size: 14px; color: #666; margin-bottom: 16px;">Already have an account?</p>
+                <button type="button" id="show-login-btn" style="background: none; border: 2px solid #6366f1; color: #6366f1; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 500; width: 100%;">Login</button>
+            </div>
+        </div>
+
+        <div id="forgot-password-view" style="display: none;">
+            <form id="forgot-password-form">
+                <div class="form-group">
+                    <label for="forgot-email">Email</label>
+                    <input type="email" id="forgot-email" placeholder="Enter your email" required>
+                </div>
+
+                <button type="submit" id="forgot-btn" class="primary-btn">Send Reset Link</button>
+            </form>
+
+            <div style="text-align: center; margin-top: 16px;">
+                <a href="#" id="back-to-login-link" style="color: #6366f1; text-decoration: none; font-size: 14px;">Back to Login</a>
+            </div>
+        </div>
 
         <div id="errorDisplay"></div>
+        <div id="successDisplay" style="margin-top: 24px; padding: 16px; background: #d1fae5; border-radius: 8px; font-size: 14px; color: #059669; display: none;"></div>
     </div>
     
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -162,29 +210,91 @@
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         // Get DOM elements
+        const loginView = document.getElementById('login-view');
+        const signupView = document.getElementById('signup-view');
+        const forgotPasswordView = document.getElementById('forgot-password-view');
+        
         const authForm = document.getElementById('auth-form');
+        const signupForm = document.getElementById('signup-form');
+        const forgotPasswordForm = document.getElementById('forgot-password-form');
+        
         const emailInput = document.getElementById('email');
         const passwordInput = document.getElementById('password');
+        const signupEmailInput = document.getElementById('signup-email');
+        const signupPasswordInput = document.getElementById('signup-password');
+        const forgotEmailInput = document.getElementById('forgot-email');
+        
         const loginBtn = document.getElementById('login-btn');
+        const signupBtn = document.getElementById('signup-btn');
+        const forgotBtn = document.getElementById('forgot-btn');
+        
         const errorDisplay = document.getElementById('errorDisplay');
+        const successDisplay = document.getElementById('successDisplay');
+        
+        const showSignupBtn = document.getElementById('show-signup-btn');
+        const showLoginBtn = document.getElementById('show-login-btn');
+        const forgotPasswordLink = document.getElementById('forgot-password-link');
+        const backToLoginLink = document.getElementById('back-to-login-link');
+
+        // View switching
+        function showLoginView() {
+            loginView.style.display = 'block';
+            signupView.style.display = 'none';
+            forgotPasswordView.style.display = 'none';
+            hideMessages();
+        }
+
+        function showSignupView() {
+            loginView.style.display = 'none';
+            signupView.style.display = 'block';
+            forgotPasswordView.style.display = 'none';
+            hideMessages();
+        }
+
+        function showForgotPasswordView() {
+            loginView.style.display = 'none';
+            signupView.style.display = 'none';
+            forgotPasswordView.style.display = 'block';
+            hideMessages();
+        }
 
         // Show error message
         function showError(message) {
             errorDisplay.textContent = message;
             errorDisplay.classList.add('show');
+            successDisplay.classList.remove('show');
             console.error('EasyPrompt Auth Error:', message);
         }
 
-        // Hide error message
-        function hideError() {
+        // Show success message
+        function showSuccess(message) {
+            successDisplay.textContent = message;
+            successDisplay.classList.add('show');
             errorDisplay.classList.remove('show');
-            errorDisplay.textContent = '';
         }
 
-        // Form submit handler
+        // Hide messages
+        function hideMessages() {
+            errorDisplay.classList.remove('show');
+            successDisplay.classList.remove('show');
+        }
+
+        // View switchers
+        showSignupBtn.addEventListener('click', showSignupView);
+        showLoginBtn.addEventListener('click', showLoginView);
+        forgotPasswordLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            showForgotPasswordView();
+        });
+        backToLoginLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            showLoginView();
+        });
+
+        // Login form submit handler
         authForm.addEventListener('submit', async function(e) {
             e.preventDefault();
-            hideError();
+            hideMessages();
 
             const email = emailInput.value.trim();
             const password = passwordInput.value;
@@ -230,6 +340,119 @@
                 showError(error.message || 'An unexpected error occurred');
                 loginBtn.disabled = false;
                 loginBtn.textContent = 'Login';
+            }
+        });
+
+        // Signup form submit handler
+        signupForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            hideMessages();
+
+            const email = signupEmailInput.value.trim();
+            const password = signupPasswordInput.value;
+
+            // Validate inputs
+            if (!email) {
+                showError('Please enter your email');
+                return;
+            }
+
+            if (!password || password.length < 6) {
+                showError('Password must be at least 6 characters');
+                return;
+            }
+
+            // Disable button during request
+            signupBtn.disabled = true;
+            signupBtn.textContent = 'Signing up...';
+
+            try {
+                const response = await fetch('/api/auth/signup', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        password: password
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    showError(data.error || 'Sign up failed');
+                    signupBtn.disabled = false;
+                    signupBtn.textContent = 'Sign Up';
+                    return;
+                }
+
+                // Success
+                showSuccess(data.message || 'Account created successfully! Please check your email to confirm your account.');
+                signupBtn.disabled = false;
+                signupBtn.textContent = 'Sign Up';
+                
+                // Optionally redirect to login after showing message
+                setTimeout(() => {
+                    showLoginView();
+                    signupEmailInput.value = '';
+                    signupPasswordInput.value = '';
+                }, 3000);
+
+            } catch (error) {
+                showError(error.message || 'An unexpected error occurred');
+                signupBtn.disabled = false;
+                signupBtn.textContent = 'Sign Up';
+            }
+        });
+
+        // Forgot password form submit handler
+        forgotPasswordForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            hideMessages();
+
+            const email = forgotEmailInput.value.trim();
+
+            // Validate inputs
+            if (!email) {
+                showError('Please enter your email');
+                return;
+            }
+
+            // Disable button during request
+            forgotBtn.disabled = true;
+            forgotBtn.textContent = 'Sending...';
+
+            try {
+                const response = await fetch('/api/auth/forgot-password', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        email: email
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    showError(data.error || 'Failed to send reset link');
+                    forgotBtn.disabled = false;
+                    forgotBtn.textContent = 'Send Reset Link';
+                    return;
+                }
+
+                // Success - always show success message (security)
+                showSuccess(data.message || 'If this email exists, we\'ve sent a reset link.');
+                forgotBtn.disabled = false;
+                forgotBtn.textContent = 'Send Reset Link';
+                forgotEmailInput.value = '';
+
+            } catch (error) {
+                showError(error.message || 'An unexpected error occurred');
+                forgotBtn.disabled = false;
+                forgotBtn.textContent = 'Send Reset Link';
             }
         });
     </script>

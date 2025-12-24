@@ -49,6 +49,68 @@ app.get('/app', (req, res) => {
   res.sendFile(join(__dirname, 'app.html'));
 });
 
+// GET /extension-connect - Connect Chrome extension with Pro token
+app.get('/extension-connect', async (req, res) => {
+  try {
+    // Get token from Authorization header or query param
+    const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token;
+    
+    // If no token, user is not authenticated
+    if (!token) {
+      return res.sendFile(join(__dirname, 'extension-connect.html'), {
+        // Pass message via query param since we can't use template engine
+      });
+    }
+
+    // Verify token and get authenticated user id
+    let user;
+    try {
+      user = await verifyUserFromToken(token);
+    } catch (error) {
+      // Invalid token - show login message
+      return res.sendFile(join(__dirname, 'extension-connect.html'));
+    }
+
+    const userId = user.userId;
+
+    // Create authenticated Supabase client
+    const authenticatedClient = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_ANON_KEY,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      }
+    );
+
+    // Check if user is Pro
+    const isPro = await getUserProStatus({
+      authenticatedClient,
+      userId
+    });
+
+    if (!isPro) {
+      // User is authenticated but not Pro
+      return res.sendFile(join(__dirname, 'extension-connect.html'));
+    }
+
+    // User is Pro - send page with token in query string
+    // The token is the Supabase access token (same one used for API calls)
+    res.redirect(`/extension-connect.html?token=${encodeURIComponent(token)}`);
+  } catch (error) {
+    console.error('Error in /extension-connect:', error);
+    res.sendFile(join(__dirname, 'extension-connect.html'));
+  }
+});
+
+// Serve extension-connect.html directly (for redirect with token)
+app.get('/extension-connect.html', (req, res) => {
+  res.sendFile(join(__dirname, 'extension-connect.html'));
+});
+
 // POST /api/history/save
 app.post('/api/history/save', async (req, res) => {
   try {

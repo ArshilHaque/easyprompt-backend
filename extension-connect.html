@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connect EasyPrompt Extension</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            padding: 48px;
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .icon {
+            font-size: 48px;
+            margin-bottom: 24px;
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 16px;
+        }
+
+        .message {
+            font-size: 16px;
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 32px;
+        }
+
+        .success {
+            color: #10b981;
+        }
+
+        .error {
+            color: #ef4444;
+        }
+
+        .info {
+            color: #3b82f6;
+        }
+
+        .button {
+            display: inline-block;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: 500;
+            color: white;
+            background: #3b82f6;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: background 0.2s;
+        }
+
+        .button:hover {
+            background: #2563eb;
+        }
+
+        .spinner {
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 24px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="loadingState">
+            <div class="spinner"></div>
+            <h1>Connecting Extension...</h1>
+            <p class="message">Please wait while we connect your extension.</p>
+        </div>
+
+        <div id="successState" class="hidden">
+            <div class="icon">✅</div>
+            <h1>Extension Connected!</h1>
+            <p class="message success">Your EasyPrompt extension has been connected successfully. You can now use Follow-up in ChatGPT.</p>
+            <p class="message" style="font-size: 14px; color: #999; margin-top: 16px;">This window will close automatically...</p>
+        </div>
+
+        <div id="errorState" class="hidden">
+            <div class="icon">❌</div>
+            <h1>Connection Failed</h1>
+            <p class="message error" id="errorMessage">Unable to connect extension. Please try again.</p>
+            <a href="/app" class="button" style="margin-top: 24px;">Go to Dashboard</a>
+        </div>
+
+        <div id="loginRequiredState" class="hidden">
+            <div class="icon">🔐</div>
+            <h1>Login Required</h1>
+            <p class="message">Please login to continue.</p>
+            <a href="/auth" class="button" style="margin-top: 24px;">Go to Login</a>
+        </div>
+
+        <div id="proRequiredState" class="hidden">
+            <div class="icon">⭐</div>
+            <h1>Pro Required</h1>
+            <p class="message">Upgrade to Pro to use Follow-up in the extension.</p>
+            <a href="/app" class="button" style="margin-top: 24px;">Go to Dashboard</a>
+        </div>
+    </div>
+
+    <script>
+        // Get extension ID from manifest (hardcoded for now, or use chrome.runtime.id if available)
+        // Since we're in a web page, we need to use chrome.runtime.sendMessage
+        // The extension must be listening for messages
+
+        async function connectExtension() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const token = urlParams.get('token');
+
+            // If no token, check if user needs to login or upgrade
+            if (!token) {
+                // Check if we can determine the reason
+                // For now, show login required (user can navigate to dashboard)
+                document.getElementById('loadingState').classList.add('hidden');
+                document.getElementById('loginRequiredState').classList.remove('hidden');
+                return;
+            }
+
+            try {
+                // Use chrome.runtime.sendMessage to send token to extension
+                // For externally_connectable, we need the extension ID
+                // Since we don't know it, we'll try to detect it or use a fallback
+                if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.sendMessage) {
+                    showError('Chrome extension API not available. Please make sure you are using Chrome and the EasyPrompt extension is installed.');
+                    return;
+                }
+
+                // Try to get extension ID from chrome.runtime.id (won't work from web page)
+                // For externally_connectable, web pages need to specify extension ID
+                // We'll try a different approach: use chrome.runtime.sendMessage with a known pattern
+                // Or we can store the extension ID in localStorage from a previous connection
+                
+                // For now, try sending without extension ID (might work if extension is set up correctly)
+                // The extension's onMessageExternal should receive this
+                try {
+                    chrome.runtime.sendMessage({
+                        type: 'SAVE_EXTENSION_TOKEN',
+                        token: token
+                    }, (response) => {
+                        if (chrome.runtime.lastError) {
+                            console.error('Extension message error:', chrome.runtime.lastError);
+                            // Fallback: show instructions
+                            showError('Could not connect to extension. Please make sure the EasyPrompt extension is installed and try refreshing this page.');
+                            return;
+                        }
+                        
+                        if (response && response.success) {
+                            showSuccess();
+                        } else {
+                            showError(response?.error || 'Failed to save token to extension.');
+                        }
+                    });
+                } catch (sendError) {
+                    console.error('Send message error:', sendError);
+                    // Fallback: try window.postMessage (extension can listen via tabs API)
+                    window.postMessage({
+                        type: 'SAVE_EXTENSION_TOKEN',
+                        token: token,
+                        source: 'extension-connect-page'
+                    }, '*');
+                    
+                    // Show success after delay (extension might pick it up via tabs API)
+                    setTimeout(() => {
+                        showSuccess();
+                    }, 2000);
+                }
+            } catch (error) {
+                console.error('Connection error:', error);
+                showError('Failed to connect extension: ' + error.message);
+            }
+        }
+
+        function showSuccess() {
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('successState').classList.remove('hidden');
+            
+            // Close tab after 2 seconds
+            setTimeout(() => {
+                window.close();
+            }, 2000);
+        }
+
+        function showError(message) {
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('errorState').classList.remove('hidden');
+            if (message) {
+                document.getElementById('errorMessage').textContent = message;
+            }
+        }
+
+        // Run on page load
+        connectExtension();
+    </script>
+</body>
+</html>
+

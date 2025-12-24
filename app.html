@@ -163,6 +163,18 @@
                     <span class="info-value loading" id="creditsNumber">Loading...</span>
                 </div>
             </div>
+
+            <div class="section" id="extensionSection" style="display: none;">
+                <h2 class="section-title">Chrome Extension</h2>
+                <div style="margin-top: 16px;">
+                    <button id="connectExtensionBtn" class="button" style="display: inline-block; padding: 12px 24px; font-size: 16px; font-weight: 500; color: white; background: #3b82f6; border: none; border-radius: 8px; cursor: pointer; transition: background 0.2s;">
+                        🔗 Connect EasyPrompt Extension
+                    </button>
+                    <p style="margin-top: 12px; font-size: 14px; color: #666;">
+                        Connect your Chrome extension to unlock Follow-up in ChatGPT. Pro users only.
+                    </p>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -224,6 +236,11 @@
                 document.getElementById('creditsNumber').textContent = userData.credits;
                 document.getElementById('creditsNumber').classList.remove('loading');
 
+                // Show extension section if user is Pro
+                if (userData.plan === 'Pro') {
+                    document.getElementById('extensionSection').style.display = 'block';
+                }
+
             } catch (error) {
                 console.error('Error loading account info:', error);
                 redirectToAuth();
@@ -267,6 +284,24 @@
                 console.error('Logout error:', error);
             }
             redirectToAuth();
+        });
+
+        // Connect extension button handler
+        document.getElementById('connectExtensionBtn').addEventListener('click', async () => {
+            try {
+                const storedToken = localStorage.getItem('supabase_token');
+                if (!storedToken) {
+                    redirectToAuth();
+                    return;
+                }
+                
+                // Open extension-connect page with token
+                const connectUrl = `${API_BASE_URL}/extension-connect?token=${encodeURIComponent(storedToken)}`;
+                window.open(connectUrl, '_blank');
+            } catch (error) {
+                console.error('Error opening extension connect:', error);
+                alert('Failed to open extension connection page. Please try again.');
+            }
         });
 
         // Run authentication check on page load

@@ -330,11 +330,53 @@
                     return;
                 }
 
-                // Store access token in localStorage
-                localStorage.setItem('supabase_token', data.session.access_token);
+                // Extract access token
+                const accessToken = data.session.access_token;
+                console.log('[AUTH] Login successful, token:', accessToken ? `${accessToken.substring(0, 20)}...` : 'missing');
 
-                // Redirect to app.html
-                window.location.href = 'app.html';
+                // Store access token in chrome.storage.local (if available) AND localStorage
+                // Wait for storage to complete before redirect
+                try {
+                    // Save to localStorage (for web dashboard)
+                    localStorage.setItem('supabase_token', accessToken);
+                    console.log('[AUTH] Token saved to localStorage');
+
+                    // Also save to chrome.storage.local if available (for extension access)
+                    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                        await new Promise((resolve, reject) => {
+                            chrome.storage.local.set({ authToken: accessToken }, () => {
+                                if (chrome.runtime.lastError) {
+                                    console.error('[AUTH] Error saving to chrome.storage.local:', chrome.runtime.lastError);
+                                    reject(chrome.runtime.lastError);
+                                } else {
+                                    console.log('[AUTH] Token saved to chrome.storage.local successfully');
+                                    resolve();
+                                }
+                            });
+                        });
+                    }
+
+                    // Verify token was saved to localStorage
+                    const savedToken = localStorage.getItem('supabase_token');
+                    if (!savedToken || savedToken !== accessToken) {
+                        console.error('[AUTH] Token verification failed after save');
+                        showError('Failed to persist authentication token');
+                        loginBtn.disabled = false;
+                        loginBtn.textContent = 'Login';
+                        return;
+                    }
+
+                    console.log('[AUTH] Token verified, redirecting to dashboard');
+                    
+                    // Redirect to app.html ONLY after token is saved and verified
+                    window.location.href = 'app.html';
+                } catch (error) {
+                    console.error('[AUTH] Error saving token:', error);
+                    showError('Failed to save authentication token');
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Login';
+                    return;
+                }
 
             } catch (error) {
                 showError(error.message || 'An unexpected error occurred');

@@ -192,7 +192,11 @@
         let currentUserPlan = 'Free';
 
         // Redirect to auth if token invalid
+        // ONLY call this when token is actually invalid, not on every page load
         function redirectToAuth() {
+            console.log('[AUTH] Redirecting to auth page');
+            // Only remove token if we're explicitly redirecting due to invalid token
+            // Don't clear token on page load - let checkAuthentication handle that
             localStorage.removeItem('supabase_token');
             window.location.href = 'auth.html';
         }
@@ -252,10 +256,34 @@
         // Check authentication on page load
         async function checkAuthentication() {
             try {
-                // Read token from localStorage
-                const storedToken = localStorage.getItem('supabase_token');
+                // Read token from localStorage (primary source for web dashboard)
+                let storedToken = localStorage.getItem('supabase_token');
+                console.log('[AUTH] Token on dashboard load (localStorage):', storedToken ? `${storedToken.substring(0, 20)}...` : 'undefined');
+                
+                // If no token in localStorage, try chrome.storage.local (for extension context)
+                if (!storedToken && typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                    storedToken = await new Promise((resolve) => {
+                        chrome.storage.local.get(['authToken'], (result) => {
+                            if (chrome.runtime.lastError) {
+                                console.error('[AUTH] Error reading from chrome.storage.local:', chrome.runtime.lastError);
+                                resolve(null);
+                            } else {
+                                const token = result.authToken || null;
+                                console.log('[AUTH] Token on dashboard load (chrome.storage.local):', token ? `${token.substring(0, 20)}...` : 'undefined');
+                                resolve(token);
+                            }
+                        });
+                    });
+                    
+                    // If found in chrome.storage.local, sync to localStorage
+                    if (storedToken) {
+                        localStorage.setItem('supabase_token', storedToken);
+                        console.log('[AUTH] Token synced from chrome.storage.local to localStorage');
+                    }
+                }
                 
                 if (!storedToken) {
+                    console.log('[AUTH] No token found, redirecting to auth');
                     redirectToAuth();
                     return;
                 }
@@ -264,26 +292,35 @@
                 const { data, error } = await supabaseClient.auth.getUser(storedToken);
 
                 if (error || !data || !data.user) {
-                    console.error('Invalid or expired token:', error);
+                    console.error('[AUTH] Invalid or expired token:', error);
                     redirectToAuth();
                     return;
                 }
 
+                console.log('[AUTH] Token valid, loading account info');
                 // Token is valid, fetch user info from backend
                 await loadAccountInfo(storedToken);
 
             } catch (error) {
-                console.error('Authentication check failed:', error);
+                console.error('[AUTH] Authentication check failed:', error);
                 redirectToAuth();
             }
         }
 
-        // Logout handler
+        // Logout handler - ONLY runs on explicit logout button click
         document.getElementById('logoutBtn').addEventListener('click', async () => {
+            console.log('[AUTH] Logout button clicked');
             try {
                 await supabaseClient.auth.signOut();
             } catch (error) {
-                console.error('Logout error:', error);
+                console.error('[AUTH] Logout error:', error);
+            }
+            // Clear tokens on explicit logout
+            localStorage.removeItem('supabase_token');
+            if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                chrome.storage.local.remove(['authToken'], () => {
+                    console.log('[AUTH] Token removed from chrome.storage.local');
+                });
             }
             redirectToAuth();
         });

@@ -253,6 +253,7 @@ app.get('/api/me', async (req, res) => {
     // Verify token and get authenticated user id (never trust client input)
     const user = await verifyUserFromToken(token);
     const userId = user.userId;
+    const userEmail = user.email;
 
     // Create a per-request Supabase client with anon key
     // Pass the user's access token via Authorization header for RLS
@@ -271,18 +272,22 @@ app.get('/api/me', async (req, res) => {
     // Query users table for user data
     const { data: userData, error } = await authenticatedClient
       .from('users')
-      .select('email, is_pro, credits, signup_bonus_given')
+      .select('email, is_pro, credits, daily_credits_used, daily_reset_at, signup_bonus_given')
       .eq('id', userId)
       .single();
 
     if (error) {
-      // If user doesn't exist in users table, use email from auth
+      // If user doesn't exist in users table, return default values
       if (error.code === 'PGRST116') {
-        return res.json({
-          email: user.email,
-          plan: 'Free',
-          credits: 0
-        });
+        const responseObject = {
+          email: userEmail,
+          plan: 'free',
+          credits_remaining: 0,
+          credits: 0, // Alias for backward compatibility
+          is_pro: false
+        };
+        console.log("[API /me] response:", responseObject);
+        return res.json(responseObject);
       }
       throw new Error(`Failed to get user data: ${error.message}`);
     }
@@ -294,16 +299,16 @@ app.get('/api/me', async (req, res) => {
         // Refresh user data to get updated credits
         const { data: updatedUserData } = await authenticatedClient
           .from('users')
-          .select('email, is_pro, credits')
+          .select('email, is_pro, credits, daily_credits_used, daily_reset_at')
           .eq('id', userId)
           .single();
         
         if (updatedUserData) {
-          return res.json({
-            email: updatedUserData.email || user.email,
-            plan: updatedUserData.is_pro === true ? 'Pro' : 'Free',
-            credits: updatedUserData.credits ?? 0
-          });
+          userData.email = updatedUserData.email || userData.email;
+          userData.is_pro = updatedUserData.is_pro;
+          userData.credits = updatedUserData.credits;
+          userData.daily_credits_used = updatedUserData.daily_credits_used;
+          userData.daily_reset_at = updatedUserData.daily_reset_at;
         }
       } catch (bonusError) {
         console.error('Error granting signup bonus:', bonusError);
@@ -311,12 +316,52 @@ app.get('/api/me', async (req, res) => {
       }
     }
 
-    // Return formatted response
-    return res.json({
-      email: userData.email || user.email,
-      plan: userData.is_pro === true ? 'Pro' : 'Free',
-      credits: userData.credits ?? 0
-    });
+    // Determine plan (lowercase)
+    const isPro = userData.is_pro === true;
+    const plan = isPro ? 'pro' : 'free';
+
+    // Calculate credits_remaining
+    let credits_remaining;
+    if (isPro) {
+      // Pro users have unlimited credits (represented as large number)
+      credits_remaining = 999999;
+    } else {
+      // Free users: calculate available credits (daily + bonus)
+      const DAILY_CREDITS = 3;
+      
+      // Check if daily credits need reset
+      const now = new Date();
+      const dailyResetAt = userData.daily_reset_at ? new Date(userData.daily_reset_at) : null;
+      const dailyCreditsUsed = userData.daily_credits_used || 0;
+      
+      let dailyCreditsAvailable = 0;
+      if (!dailyResetAt || now >= dailyResetAt) {
+        // Reset needed or already reset - full daily credits available
+        dailyCreditsAvailable = DAILY_CREDITS;
+      } else {
+        // Daily credits still valid
+        dailyCreditsAvailable = Math.max(0, DAILY_CREDITS - dailyCreditsUsed);
+      }
+      
+      // Bonus credits (one-time signup bonus)
+      const bonusCredits = userData.credits || 0;
+      
+      // Total available credits
+      credits_remaining = dailyCreditsAvailable + bonusCredits;
+    }
+
+    // Build response object
+    // Return both credits_remaining (new format) and credits (for backward compatibility with frontend)
+    const responseObject = {
+      email: userData.email || userEmail,
+      plan: plan,
+      credits_remaining: credits_remaining,
+      credits: credits_remaining, // Alias for backward compatibility
+      is_pro: isPro
+    };
+
+    console.log("[API /me] response:", responseObject);
+    return res.json(responseObject);
   } catch (error) {
     // Invalid token or authentication error
     if (error.message.includes('token') || error.message.includes('Invalid')) {

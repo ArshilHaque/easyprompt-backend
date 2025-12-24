@@ -298,24 +298,56 @@
             connectBtn.parentNode.replaceChild(newBtn, connectBtn);
             const btn = document.getElementById('connect-extension-btn');
 
+            // Hardcoded extension ID for EasyPrompt Chrome extension
+            const EXTENSION_ID = 'gbidkjanopokiaehoopnledbjbhpdbfl';
+
             btn.addEventListener('click', () => {
                 console.log('Connect Chrome Extension button clicked');
                 
-                // STEP 1: Immediately redirect to easyprompt://connect
-                // No loading spinner, no message waiting, no token needed
-                const protocolUrl = 'easyprompt://connect';
-                console.log('Redirect triggered to:', protocolUrl);
+                // Disable button and show loading state
+                const originalText = btn.textContent;
+                btn.disabled = true;
+                btn.textContent = 'Connecting...';
+                btn.style.opacity = '0.6';
+                btn.style.cursor = 'not-allowed';
+
+                // Send message to extension using chrome.runtime.sendMessage
+                console.log('Dashboard: Sending EASYPROMPT_CONNECT message to extension:', EXTENSION_ID);
                 
-                // Attempt redirect (extension will handle the protocol)
-                window.location.href = protocolUrl;
-                
-                // STEP 1: Fallback timeout - if redirect doesn't happen within 1 second, show error
-                setTimeout(() => {
-                    // Check if we're still on the same page (redirect didn't happen)
-                    if (window.location.href.includes('easyprompt-backend-production.up.railway.app')) {
-                        alert('Chrome extension not detected. Please make sure the EasyPrompt extension is installed and enabled.');
+                chrome.runtime.sendMessage(EXTENSION_ID, { type: 'EASYPROMPT_CONNECT' }, (response) => {
+                    // Handle chrome.runtime.lastError (extension not installed)
+                    if (chrome.runtime.lastError) {
+                        console.error('Dashboard: Extension not detected:', chrome.runtime.lastError.message);
+                        alert('Extension not installed. Please make sure the EasyPrompt extension is installed and enabled.');
+                        
+                        // Re-enable button
+                        btn.disabled = false;
+                        btn.textContent = originalText;
+                        btn.style.opacity = '1';
+                        btn.style.cursor = 'pointer';
+                        return;
                     }
-                }, 1000);
+                    
+                    // Check response
+                    if (response && response.success === true) {
+                        console.log('Dashboard: Extension connected successfully');
+                        // Mark extension as connected and stop loading state
+                        btn.disabled = false;
+                        btn.textContent = '✓ Connected';
+                        btn.style.opacity = '1';
+                        btn.style.cursor = 'pointer';
+                        btn.style.background = '#10b981'; // Green for success
+                    } else {
+                        console.error('Dashboard: Connection failed:', response);
+                        alert('Failed to connect extension. Please try again.');
+                        
+                        // Re-enable button
+                        btn.disabled = false;
+                        btn.textContent = originalText;
+                        btn.style.opacity = '1';
+                        btn.style.cursor = 'pointer';
+                    }
+                });
             });
         }
 

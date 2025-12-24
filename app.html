@@ -187,6 +187,9 @@
         
         // Initialize Supabase client
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        // Store user plan globally for extension connection
+        let currentUserPlan = 'Free';
 
         // Redirect to auth if token invalid
         function redirectToAuth() {
@@ -224,8 +227,9 @@
                 document.getElementById('userEmail').textContent = userData.email;
                 document.getElementById('userEmail').classList.remove('loading');
 
-                // Display plan badge
+                // Display plan badge and store plan globally
                 const planElement = document.getElementById('userPlan');
+                currentUserPlan = userData.plan || 'Free'; // Store plan for extension connection
                 if (userData.plan === 'Pro') {
                     planElement.innerHTML = '<span class="plan-badge pro">Pro</span>';
                 } else {
@@ -311,10 +315,27 @@
                 btn.style.opacity = '0.6';
                 btn.style.cursor = 'not-allowed';
 
-                // Send message to extension using chrome.runtime.sendMessage
-                console.log('Dashboard: Sending EASYPROMPT_CONNECT message to extension:', EXTENSION_ID);
+                // Get user's plan and token to determine if we should send proToken
+                const storedToken = localStorage.getItem('supabase_token');
+                let proToken = null;
                 
-                chrome.runtime.sendMessage(EXTENSION_ID, { type: 'EASYPROMPT_CONNECT' }, (response) => {
+                // If user is Pro and has token, include proToken in message
+                if (currentUserPlan === 'Pro' && storedToken) {
+                    proToken = storedToken;
+                    console.log('Dashboard: User is Pro, including proToken in connection message');
+                } else {
+                    console.log('Dashboard: User is Free or no token, connecting without proToken');
+                }
+                
+                // Send message to extension using chrome.runtime.sendMessage
+                const connectMessage = {
+                    type: 'EASYPROMPT_CONNECT',
+                    proToken: proToken
+                };
+                console.log('Dashboard: Sending EASYPROMPT_CONNECT message to extension:', EXTENSION_ID);
+                console.log('Dashboard: Message includes proToken:', !!proToken);
+                
+                chrome.runtime.sendMessage(EXTENSION_ID, connectMessage, (response) => {
                     // Handle chrome.runtime.lastError (extension not installed)
                     if (chrome.runtime.lastError) {
                         console.error('Dashboard: Extension not detected:', chrome.runtime.lastError.message);

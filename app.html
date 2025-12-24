@@ -167,7 +167,7 @@
             <div class="section" id="extensionSection" style="display: block;">
                 <h2 class="section-title">Chrome Extension</h2>
                 <div style="margin-top: 16px;">
-                    <button id="connectExtensionBtn" class="button" style="display: inline-block; padding: 12px 24px; font-size: 16px; font-weight: 500; color: white; background: #3b82f6; border: none; border-radius: 8px; cursor: pointer; transition: background 0.2s;">
+                    <button id="connect-extension-btn" class="button" style="display: inline-block; padding: 12px 24px; font-size: 16px; font-weight: 500; color: white; background: #3b82f6; border: none; border-radius: 8px; cursor: pointer; transition: background 0.2s;">
                         🔗 Connect Chrome Extension
                     </button>
                     <p style="margin-top: 12px; font-size: 14px; color: #666;">
@@ -285,21 +285,76 @@
         });
 
         // Connect extension button handler
-        document.getElementById('connectExtensionBtn').addEventListener('click', async () => {
-            try {
-                const storedToken = localStorage.getItem('supabase_token');
-                if (!storedToken) {
-                    redirectToAuth();
-                    return;
-                }
-                
-                // Redirect to extension-connect (backend will handle auth/Pro checks)
-                window.location.href = `${API_BASE_URL}/extension-connect?token=${encodeURIComponent(storedToken)}`;
-            } catch (error) {
-                console.error('Error opening extension connect:', error);
-                alert('Failed to open extension connection page. Please try again.');
+        // Function to attach click handler (works whether DOM is loaded or not)
+        function attachConnectButtonHandler() {
+            const connectBtn = document.getElementById('connect-extension-btn');
+            if (!connectBtn) {
+                console.error('Connect extension button not found');
+                return;
             }
-        });
+
+            // Remove any existing listeners by cloning the button
+            const newBtn = connectBtn.cloneNode(true);
+            connectBtn.parentNode.replaceChild(newBtn, connectBtn);
+            const btn = document.getElementById('connect-extension-btn');
+
+            btn.addEventListener('click', async () => {
+                console.log('Connect Chrome Extension button clicked');
+                
+                // Disable button and show loading state
+                const originalText = btn.textContent;
+                btn.disabled = true;
+                btn.textContent = 'Connecting...';
+                btn.style.opacity = '0.6';
+                btn.style.cursor = 'not-allowed';
+
+                try {
+                    // Fetch user's existing auth token (same token used for API auth)
+                    const storedToken = localStorage.getItem('supabase_token');
+                    
+                    console.log('Token retrieved:', storedToken ? 'Token exists' : 'Token missing');
+                    
+                    if (!storedToken) {
+                        // If token is missing, show alert
+                        alert('Please login again');
+                        // Re-enable button
+                        btn.disabled = false;
+                        btn.textContent = originalText;
+                        btn.style.opacity = '1';
+                        btn.style.cursor = 'pointer';
+                        return;
+                    }
+                    
+                    // Redirect to custom protocol URL: easyprompt://connect?token=USER_TOKEN
+                    const protocolUrl = `easyprompt://connect?token=${encodeURIComponent(storedToken)}`;
+                    console.log('Redirect triggered to:', protocolUrl);
+                    
+                    // Attempt redirect (extension will handle the protocol)
+                    window.location.href = protocolUrl;
+                    
+                    // Note: If protocol handler doesn't exist, browser may show error
+                    // Extension background script should handle this via webRequest or tabs API
+                    
+                } catch (error) {
+                    console.error('Error connecting extension:', error);
+                    alert('Failed to connect extension. Please try again.');
+                    
+                    // Re-enable button on error
+                    btn.disabled = false;
+                    btn.textContent = originalText;
+                    btn.style.opacity = '1';
+                    btn.style.cursor = 'pointer';
+                }
+            });
+        }
+
+        // Attach handler on DOMContentLoaded (or immediately if DOM is already loaded)
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', attachConnectButtonHandler);
+        } else {
+            // DOM is already loaded
+            attachConnectButtonHandler();
+        }
 
         // Run authentication check on page load
         checkAuthentication();

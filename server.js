@@ -241,6 +241,10 @@ app.get('/api/pro/check', async (req, res) => {
 
 // GET /api/me
 app.get('/api/me', async (req, res) => {
+  let authUser = null;
+  let userId = null;
+  let userEmail = null;
+
   try {
     // Get token from Authorization header
     const authHeader = req.headers.authorization;
@@ -251,9 +255,20 @@ app.get('/api/me', async (req, res) => {
     const token = authHeader.replace('Bearer ', '');
 
     // Verify token and get authenticated user id (never trust client input)
-    const user = await verifyUserFromToken(token);
-    const userId = user.userId;
-    const userEmail = user.email;
+    authUser = await verifyUserFromToken(token);
+    userId = authUser.userId;
+    userEmail = authUser.email;
+
+    // Ensure user exists in users table BEFORE querying
+    try {
+      await ensureUserExists({
+        id: userId,
+        email: userEmail
+      });
+    } catch (ensureError) {
+      console.error('[/api/me] Error ensuring user exists:', ensureError);
+      // Continue - we'll handle missing user in the query below
+    }
 
     // Create a per-request Supabase client with anon key
     // Pass the user's access token via Authorization header for RLS
@@ -270,30 +285,62 @@ app.get('/api/me', async (req, res) => {
     );
 
     // Query users table for user data
-    const { data: userData, error } = await authenticatedClient
+    let { data: userData, error } = await authenticatedClient
       .from('users')
       .select('email, is_pro, credits, daily_credits_used, daily_reset_at, signup_bonus_given')
       .eq('id', userId)
       .single();
 
-    if (error) {
-      // If user doesn't exist in users table, return default values
-      if (error.code === 'PGRST116') {
-        const responseObject = {
-          email: userEmail,
-          plan: 'free',
-          credits_remaining: 0,
-          credits: 0, // Alias for backward compatibility
-          is_pro: false
-        };
-        console.log("[API /me] response:", responseObject);
-        return res.json(responseObject);
+    // If no row found, try to ensure user exists again and re-fetch
+    if (error && error.code === 'PGRST116') {
+      try {
+        await ensureUserExists({
+          id: userId,
+          email: userEmail
+        });
+        // Re-fetch after ensuring user exists
+        const retryResult = await authenticatedClient
+          .from('users')
+          .select('email, is_pro, credits, daily_credits_used, daily_reset_at, signup_bonus_given')
+          .eq('id', userId)
+          .single();
+        
+        if (retryResult.data) {
+          userData = retryResult.data;
+          error = null;
+        }
+      } catch (retryError) {
+        console.error('[/api/me] Error on retry after ensureUserExists:', retryError);
+        // Continue with default values below
       }
-      throw new Error(`Failed to get user data: ${error.message}`);
     }
 
+    // If still no user data, return safe defaults
+    if (error || !userData) {
+      const responseObject = {
+        email: userEmail,
+        plan: 'free',
+        credits_remaining: 3, // Default daily credits
+        credits: 3, // Alias for backward compatibility
+        daily_remaining: 3,
+        is_pro: false
+      };
+      console.log("[API /me] response (defaults):", responseObject);
+      return res.status(200).json(responseObject);
+    }
+
+    // Use safe defaults for all fields
+    const safeUserData = {
+      email: userData.email ?? userEmail,
+      is_pro: userData.is_pro ?? false,
+      credits: userData.credits ?? 0,
+      daily_credits_used: userData.daily_credits_used ?? 0,
+      daily_reset_at: userData.daily_reset_at ?? new Date().toISOString(),
+      signup_bonus_given: userData.signup_bonus_given ?? false
+    };
+
     // Grant signup bonus if user exists but hasn't received it yet
-    if (userData && !userData.signup_bonus_given) {
+    if (!safeUserData.signup_bonus_given) {
       try {
         await grantSignupBonus({ authenticatedClient, userId });
         // Refresh user data to get updated credits
@@ -304,23 +351,23 @@ app.get('/api/me', async (req, res) => {
           .single();
         
         if (updatedUserData) {
-          userData.email = updatedUserData.email || userData.email;
-          userData.is_pro = updatedUserData.is_pro;
-          userData.credits = updatedUserData.credits;
-          userData.daily_credits_used = updatedUserData.daily_credits_used;
-          userData.daily_reset_at = updatedUserData.daily_reset_at;
+          safeUserData.email = updatedUserData.email ?? safeUserData.email;
+          safeUserData.is_pro = updatedUserData.is_pro ?? safeUserData.is_pro;
+          safeUserData.credits = updatedUserData.credits ?? safeUserData.credits;
+          safeUserData.daily_credits_used = updatedUserData.daily_credits_used ?? safeUserData.daily_credits_used;
+          safeUserData.daily_reset_at = updatedUserData.daily_reset_at ?? safeUserData.daily_reset_at;
         }
       } catch (bonusError) {
-        console.error('Error granting signup bonus:', bonusError);
+        console.error('[/api/me] Error granting signup bonus:', bonusError);
         // Continue with existing user data even if bonus grant fails
       }
     }
 
     // Determine plan (lowercase)
-    const isPro = userData.is_pro === true;
+    const isPro = safeUserData.is_pro === true;
     const plan = isPro ? 'pro' : 'free';
 
-    // Calculate credits_remaining
+    // Calculate credits_remaining with safe defaults
     let credits_remaining;
     if (isPro) {
       // Pro users have unlimited credits (represented as large number)
@@ -329,10 +376,10 @@ app.get('/api/me', async (req, res) => {
       // Free users: calculate available credits (daily + bonus)
       const DAILY_CREDITS = 3;
       
-      // Check if daily credits need reset
+      // Check if daily credits need reset (use safe defaults)
       const now = new Date();
-      const dailyResetAt = userData.daily_reset_at ? new Date(userData.daily_reset_at) : null;
-      const dailyCreditsUsed = userData.daily_credits_used || 0;
+      const dailyResetAt = safeUserData.daily_reset_at ? new Date(safeUserData.daily_reset_at) : null;
+      const dailyCreditsUsed = safeUserData.daily_credits_used ?? 0;
       
       let dailyCreditsAvailable = 0;
       if (!dailyResetAt || now >= dailyResetAt) {
@@ -344,7 +391,7 @@ app.get('/api/me', async (req, res) => {
       }
       
       // Bonus credits (one-time signup bonus)
-      const bonusCredits = userData.credits || 0;
+      const bonusCredits = safeUserData.credits ?? 0;
       
       // Total available credits
       credits_remaining = dailyCreditsAvailable + bonusCredits;
@@ -353,24 +400,33 @@ app.get('/api/me', async (req, res) => {
     // Build response object
     // Return both credits_remaining (new format) and credits (for backward compatibility with frontend)
     const responseObject = {
-      email: userData.email || userEmail,
+      email: safeUserData.email,
       plan: plan,
       credits_remaining: credits_remaining,
       credits: credits_remaining, // Alias for backward compatibility
+      daily_remaining: isPro ? 999999 : Math.max(0, 3 - (safeUserData.daily_credits_used ?? 0)),
       is_pro: isPro
     };
 
     console.log("[API /me] response:", responseObject);
-    return res.json(responseObject);
+    return res.status(200).json(responseObject);
   } catch (error) {
-    // Invalid token or authentication error
-    if (error.message.includes('token') || error.message.includes('Invalid')) {
+    // Invalid token or authentication error - return 401
+    if (error.message && (error.message.includes('token') || error.message.includes('Invalid') || error.message.includes('expired'))) {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
 
-    // Other errors
-    console.error('Error getting user data:', error);
-    return res.status(500).json({ error: error.message });
+    // All other errors - return 200 with safe defaults (NEVER return 500)
+    console.error("[/api/me] error:", error);
+    const fallbackEmail = userEmail || (authUser?.email) || 'unknown@example.com';
+    return res.status(200).json({
+      email: fallbackEmail,
+      plan: 'free',
+      credits: 0,
+      credits_remaining: 3,
+      daily_remaining: 3,
+      is_pro: false
+    });
   }
 });
 
